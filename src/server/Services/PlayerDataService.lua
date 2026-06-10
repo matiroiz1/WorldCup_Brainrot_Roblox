@@ -48,15 +48,25 @@ local function setupLeaderstats(player: Player, data: typeof(DEFAULT_DATA))
     leaderstats.Name = "leaderstats"
     leaderstats.Parent = player
 
-    local coinsValue = Instance.new("NumberValue")
-    coinsValue.Name = "Coins"
-    coinsValue.Value = data.coins
-    coinsValue.Parent = leaderstats
+    local coinsVal = Instance.new("NumberValue")
+    coinsVal.Name   = "Coins"
+    coinsVal.Value  = data.coins
+    coinsVal.Parent = leaderstats
 
-    local capturesValue = Instance.new("NumberValue")
-    capturesValue.Name = "Capturas"
-    capturesValue.Value = data.totalCaptures
-    capturesValue.Parent = leaderstats
+    local capturesVal = Instance.new("NumberValue")
+    capturesVal.Name   = "Capturas"
+    capturesVal.Value  = data.totalCaptures
+    capturesVal.Parent = leaderstats
+
+    local weeklyVal = Instance.new("NumberValue")
+    weeklyVal.Name   = "SemanaCapturas"
+    weeklyVal.Value  = data.weeklyScore or 0
+    weeklyVal.Parent = leaderstats
+
+    local baseLvlVal = Instance.new("NumberValue")
+    baseLvlVal.Name   = "BaseNivel"
+    baseLvlVal.Value  = data.baseLevel or 1
+    baseLvlVal.Parent = leaderstats
 end
 
 local function onPlayerAdded(player: Player)
@@ -133,7 +143,26 @@ function PlayerDataService.addCoins(player: Player, amount: number)
     local profile = Profiles[player.UserId]
     if profile then
         Remotes.CoinsUpdated:FireClient(player, profile.Data.coins)
+        local ls = player:FindFirstChild("leaderstats")
+        if ls then
+            local v = ls:FindFirstChild("Coins")
+            if v then v.Value = profile.Data.coins end
+        end
     end
+end
+
+-- Sync leaderstats values to current profile data.
+-- Call after any stat update that should appear on the leaderboard.
+function PlayerDataService.updateLeaderstats(player: Player)
+    local profile = Profiles[player.UserId]
+    if not profile then return end
+    local ls = player:FindFirstChild("leaderstats")
+    if not ls then return end
+    local d = profile.Data
+    local coins   = ls:FindFirstChild("Coins");         if coins then coins.Value = d.coins end
+    local caps    = ls:FindFirstChild("Capturas");      if caps  then caps.Value  = d.totalCaptures end
+    local weekly  = ls:FindFirstChild("SemanaCapturas"); if weekly then weekly.Value = d.weeklyScore or 0 end
+    local baseLvl = ls:FindFirstChild("BaseNivel");     if baseLvl then baseLvl.Value = d.baseLevel or 1 end
 end
 
 -- Shorthand: add event tokens.
