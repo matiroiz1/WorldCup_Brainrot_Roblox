@@ -3,7 +3,7 @@ local ReplicatedStorage  = game:GetService("ReplicatedStorage")
 local RunService         = game:GetService("RunService")
 local ServerScriptService = game:GetService("ServerScriptService")
 
-local ProfileStore = require(ServerScriptService.Packages.ProfileStore)
+local ProfileStore = require(ServerScriptService.Packages.ProfileService)
 local Remotes      = require(ReplicatedStorage.Remotes)
 local Economy      = require(ReplicatedStorage.Config.Economy)
 
@@ -25,11 +25,13 @@ local DEFAULT_DATA = {
     weeklyScore        = 0,
     seasonScore        = 0,
     totalCaptures      = 0,
+    assignedBase       = "",
+    baseLevel          = 1,
 }
 
 local DATASTORE_NAME = RunService:IsStudio() and "Development" or "Production"
 
-local GameProfileStore = ProfileStore.New(DATASTORE_NAME, DEFAULT_DATA)
+local GameProfileStore = ProfileStore.GetProfileStore(DATASTORE_NAME, DEFAULT_DATA)
 
 -- ── Internal state ────────────────────────────────────────────────────
 local Profiles: { [number]: any } = {}

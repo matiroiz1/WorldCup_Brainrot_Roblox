@@ -1,16 +1,16 @@
 --[[
     Types.lua — Central type definitions for WorldCup Brainrot
-    All types used across server/client/shared live here.
 ]]
 
 export type Rarity = "Common" | "Rare" | "Epic" | "Legendary"
 export type CardVariant = "Normal" | "Shiny" | "Golden" | "Signed" | "Glitch"
 export type CardOrigin = "Spawn" | "Event" | "Trade" | "Season" | "Match" | "Craft" | "Mission"
-export type ZoneName = "SafeZone" | "DangerZone" | "TradingZone" | "MiniPitch"
 export type BrainrotType = "Common" | "Rare" | "Elite" | "Legendary" | "Chaotic"
 export type ToolType = "StunGlove" | "Net" | "Smoke" | "Shield" | "SprintBoost" | "Detector"
+export type ZoneName = "SafeZone" | "DangerZone" | "PlazaCentral" | "Parque" | "Estadio"
+    | "MercadoNegro" | "Puerto" | "Barrio" | "ZonaEvento"
 
--- Card data definition
+-- Card definition (from Config)
 export type CardDef = {
     cardId: string,
     playerName: string,
@@ -26,7 +26,7 @@ export type CardDef = {
     eventTags: { string },
 }
 
--- Player's owned card instance
+-- Card instance owned by a player
 export type OwnedCard = {
     cardId: string,
     variant: CardVariant,
@@ -34,13 +34,13 @@ export type OwnedCard = {
     secured: boolean,
 }
 
--- Brainrot NPC definition
+-- Brainrot NPC definition (from Config)
 export type BrainrotDef = {
     id: string,
     name: string,
     brainrotType: BrainrotType,
     spawnWeight: number,
-    spawnZones: { ZoneName },
+    spawnZones: { string },
     moveStyle: "Wander" | "Flee" | "Chase" | "Patrol",
     captureDifficulty: number,
     rewardsTable: { { cardId: string, weight: number } },
@@ -48,7 +48,17 @@ export type BrainrotDef = {
     eventOnly: boolean,
 }
 
--- Player data schema (what gets persisted in ProfileStore)
+-- Player-owned base info
+export type BaseData = {
+    baseId: string,
+    level: number,
+    stickTimeSec: number,
+    antistealDelaySec: number,
+    extraStorage: number,
+    zonePadding: number,
+}
+
+-- Player data schema — persisted via ProfileService
 export type PlayerData = {
     coins: number,
     eventTokens: number,
@@ -64,9 +74,11 @@ export type PlayerData = {
     weeklyScore: number,
     seasonScore: number,
     totalCaptures: number,
+    assignedBase: string,
+    baseLevel: number,
 }
 
--- Trade session between two players
+-- Trade session
 export type TradeSession = {
     sessionId: string,
     playerA: number,
@@ -78,14 +90,15 @@ export type TradeSession = {
     createdAt: number,
 }
 
--- Active brainrot NPC in the world
+-- Live brainrot NPC in the world (server-side state)
 export type ActiveBrainrot = {
     instanceId: string,
     defId: string,
-    position: Vector3,
-    zone: ZoneName,
+    model: Model,
+    zone: string,
     spawnedAt: number,
-    chasedBy: { number },
+    beingCaptured: boolean,
+    capturedBy: number?,
 }
 
 return {}

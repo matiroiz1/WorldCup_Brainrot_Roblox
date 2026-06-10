@@ -77,4 +77,26 @@ Economy.LegendaryEventCooldownMinutes = 180
 -- ── Max players per server ────────────────────────────────────────────
 Economy.MaxPlayersPerServer = 15
 
+-- ── Base upgrade costs ────────────────────────────────────────────────
+-- Levels 2-3: coins only. Levels 4-5: Robux required.
+Economy.BaseUpgradeCosts = {
+    [2] = { coins = 400,  robux = 0   },
+    [3] = { coins = 1200, robux = 0   },
+    [4] = { coins = 0,    robux = 75  },
+    [5] = { coins = 0,    robux = 200 },
+}
+
+-- Perks per base level
+-- stickTimeSec:      seconds to secure a card into the album
+-- antistealDelaySec: seconds intruder must wait before stealing (Etapa 9)
+-- extraStorage:      bonus storage slots granted at this level
+-- zonePadding:       extra studs added to safe zone radius (future use)
+Economy.BaseLevelPerks = {
+    [1] = { stickTimeSec = 20, antistealDelaySec = 2,  extraStorage = 0,  zonePadding = 0  },
+    [2] = { stickTimeSec = 14, antistealDelaySec = 5,  extraStorage = 2,  zonePadding = 3  },
+    [3] = { stickTimeSec = 8,  antistealDelaySec = 10, extraStorage = 5,  zonePadding = 6  },
+    [4] = { stickTimeSec = 4,  antistealDelaySec = 18, extraStorage = 10, zonePadding = 10 },
+    [5] = { stickTimeSec = 1,  antistealDelaySec = 30, extraStorage = 20, zonePadding = 15 },
+}
+
 return Economy

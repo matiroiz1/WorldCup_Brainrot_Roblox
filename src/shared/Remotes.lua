@@ -42,6 +42,11 @@ return Net.CreateDefinitions({
     -- ── Notifications ────────────────────────────────────────────────
     Notification         = Net.Definitions.ServerToClientEvent(),
 
+    -- ── Base ─────────────────────────────────────────────────────────
+    BaseAssigned         = Net.Definitions.ServerToClientEvent(),
+    RequestBaseUpgrade   = Net.Definitions.ClientToServerEvent(),
+    BaseUpgraded         = Net.Definitions.ServerToClientEvent(),
+
     -- ── Player Data ──────────────────────────────────────────────────
     PlayerDataLoaded     = Net.Definitions.ServerToClientEvent(),
 })
