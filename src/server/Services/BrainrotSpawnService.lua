@@ -364,31 +364,6 @@ local function spawnLoop()
     end
 end
 
-local function eliteEventLoop()
-    while true do
-        task.wait(Economy.EliteEventIntervalMinutes * 60)
-
-        -- Announce
-        Remotes.Notification:FireAllClients({
-            type    = "event",
-            message = "⚡ ¡Un brainrot ÉLITE apareció en la Danger Zone!",
-        })
-        task.wait(3)
-
-        -- Spawn elite at a random danger-zone spawn point
-        local spawnable = Brainrots.getAllSpawnable()
-        local elites = {}
-        for _, def in ipairs(spawnable) do
-            if def.brainrotType == "Elite" then
-                table.insert(elites, def)
-            end
-        end
-        if #elites > 0 then
-            BrainrotSpawnService.spawnBrainrot(elites[math.random(1, #elites)].id)
-        end
-    end
-end
-
 -- ── Init ──────────────────────────────────────────────────────────────
 
 function BrainrotSpawnService.OnStart()
@@ -413,7 +388,6 @@ function BrainrotSpawnService.OnStart()
     end
 
     task.spawn(spawnLoop)
-    task.spawn(eliteEventLoop)
 end
 
 return BrainrotSpawnService
