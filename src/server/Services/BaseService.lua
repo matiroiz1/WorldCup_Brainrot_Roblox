@@ -182,6 +182,32 @@ function BaseService.upgradeBase(player: Player): (boolean, string)
     return true, "ok"
 end
 
+-- Upgrade to a specific level without coin check (used by ShopService after Robux payment).
+-- Only works if player is exactly one level below targetLevel.
+function BaseService.upgradeToLevel(player: Player, targetLevel: number): boolean
+    local PDS  = getPlayerDataService()
+    local data = PDS.getData(player)
+    if not data then return false end
+
+    local currentLevel = data.baseLevel or 1
+    if currentLevel ~= targetLevel - 1 then return false end
+    if targetLevel > 5 then return false end
+
+    local perks        = Economy.BaseLevelPerks[targetLevel]
+    local extraStorage = perks.extraStorage or 0
+
+    PDS.update(player, function(d)
+        d.baseLevel    = targetLevel
+        d.storageSlots = d.storageSlots + extraStorage
+    end)
+
+    Remotes.BaseUpgraded:FireClient(player, {
+        baseLevel = targetLevel,
+        perks     = perks,
+    })
+    return true
+end
+
 -- ── Init ──────────────────────────────────────────────────────────────
 
 function BaseService.OnStart()

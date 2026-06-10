@@ -27,6 +27,9 @@ local DEFAULT_DATA = {
     totalCaptures      = 0,
     assignedBase       = "",
     baseLevel          = 1,
+    shieldExpiresAt    = 0,
+    _vipGranted        = false,
+    _premiumGranted    = false,
 }
 
 local DATASTORE_NAME = RunService:IsStudio() and "Development" or "Production"
@@ -94,6 +97,7 @@ local function onPlayerAdded(player: Player)
         storageSlots   = profile.Data.storageSlots,
         dailyStreak    = profile.Data.dailyStreak,
         weeklyScore    = profile.Data.weeklyScore,
+        baseLevel      = profile.Data.baseLevel,
     })
 end
 
