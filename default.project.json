@@ -1,5 +1,5 @@
 {
-  "name": "Roblox-Game-Template-Standard",
+  "name": "WorldCup-Brainrot",
   "tree": {
     "$className": "DataModel",
 
@@ -22,6 +22,28 @@
     "StarterPlayer": {
       "StarterPlayerScripts": {
         "$path": "src/client"
+      }
+    },
+
+    "Workspace": {
+      "$className": "Workspace",
+      "Map": {
+        "$className": "Folder",
+        "SafeZone": {
+          "$className": "Folder"
+        },
+        "DangerZone": {
+          "$className": "Folder"
+        },
+        "TradingZone": {
+          "$className": "Folder"
+        },
+        "MiniPitch": {
+          "$className": "Folder"
+        },
+        "SpawnPoints": {
+          "$className": "Folder"
+        }
       }
     }
   }
