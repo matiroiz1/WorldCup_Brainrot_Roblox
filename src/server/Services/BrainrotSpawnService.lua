@@ -1,7 +1,6 @@
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace         = game:GetService("Workspace")
-local RunService        = game:GetService("RunService")
 
 local Remotes   = require(ReplicatedStorage.Remotes)
 local Brainrots = require(ReplicatedStorage.Config.Brainrots)
@@ -9,7 +8,6 @@ local Economy   = require(ReplicatedStorage.Config.Economy)
 
 -- ── Constants ─────────────────────────────────────────────────────────
 
-local CAPTURE_RANGE  = 15   -- studs from NPC center to detect capture attempt
 local FLEE_RANGE     = 20   -- studs: brainrot starts fleeing when player is this close
 local WANDER_RADIUS  = 45   -- max studs from spawn point for wander movement
 local AI_TICK        = 0.5  -- seconds between AI decisions
@@ -237,6 +235,7 @@ function BrainrotSpawnService.spawnBrainrot(defId: string, position: Vector3?): 
 
     local instanceId = generateInstanceId()
     local model      = createNPCModel(def, position)
+    model.Name       = "BrainrotNPC_" .. instanceId  -- client finds model by this name
     model.Parent     = Workspace
 
     local state = {
@@ -408,7 +407,7 @@ function BrainrotSpawnService.OnStart()
             table.insert(commons, def)
         end
     end
-    for i = 1, math.min(4, #commons) do
+    for _ = 1, math.min(4, #commons) do
         local def = commons[math.random(1, #commons)]
         BrainrotSpawnService.spawnBrainrot(def.id)
     end
