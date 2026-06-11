@@ -196,24 +196,11 @@ local function getNearestPlayerDistance(position: Vector3): (Player?, number)
     return nearest, nearestDist
 end
 
--- Raycast hacia abajo para encontrar el Y real del suelo en una posición XZ
-local raycastParams = RaycastParams.new()
-raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-
-local function getGroundY(xzPos: Vector3, model: Model): number
-    raycastParams.FilterDescendantsInstances = { model }
-    local result = Workspace:Raycast(
-        Vector3.new(xzPos.X, 500, xzPos.Z),
-        Vector3.new(0, -600, 0),
-        raycastParams
-    )
-    return result and (result.Position.Y + 3) or xzPos.Y
-end
-
 local function runAI(instanceId: string, def: any, spawnPos: Vector3)
-    local isMoving     = false
-    local moveCooldown = math.random(2, 5)
-    local lastMoveTime = 0
+    -- Delay inicial aleatorio para que los NPCs no se muevan todos sincronizados
+    task.wait(math.random() * 4)
+
+    local nextMoveAt = os.clock() + math.random(2, 6)
 
     while true do
         task.wait(AI_TICK)
@@ -223,51 +210,52 @@ local function runAI(instanceId: string, def: any, spawnPos: Vector3)
         if state.beingCaptured then continue end
 
         local model    = state.model
-        local hrp      = model and model:FindFirstChild("HumanoidRootPart")
-        local humanoid = model and model:FindFirstChildOfClass("Humanoid")
+        if not model or not model.Parent then break end
+        local hrp      = model:FindFirstChild("HumanoidRootPart")
+        local humanoid = model:FindFirstChildOfClass("Humanoid")
         if not hrp or not humanoid or humanoid.Health <= 0 then break end
 
         local pos = hrp.Position
 
-        -- Fall detection
+        -- Fall detection: si cayó del mapa, reposicionar en el spawn
         if pos.Y < FALL_Y_LIMIT then
             model:PivotTo(CFrame.new(spawnPos))
-            isMoving = false
+            nextMoveAt = os.clock() + math.random(1, 3)
             continue
         end
 
-        local nearPlayer, nearDist = getNearestPlayerDistance(pos)
         local now = os.clock()
 
-        if def.moveStyle == "Flee" and nearPlayer and nearDist < FLEE_RANGE then
-            -- Flee: huir del jugador más cercano (ignora cooldown)
-            local playerHrp = nearPlayer.Character and nearPlayer.Character:FindFirstChild("HumanoidRootPart")
-            if playerHrp then
-                local awayDir = (Vector3.new(pos.X, 0, pos.Z) - Vector3.new(playerHrp.Position.X, 0, playerHrp.Position.Z)).Unit
-                local tx = math.clamp(pos.X + awayDir.X * 25, -300, 300)
-                local tz = math.clamp(pos.Z + awayDir.Z * 25, -300, 300)
-                local target = Vector3.new(tx, getGroundY(Vector3.new(tx, 0, tz), model), tz)
-                humanoid:MoveTo(target)
-                isMoving = true
-                lastMoveTime = now
+        -- Flee: huir del jugador más cercano, tiene prioridad sobre el wander
+        if def.moveStyle == "Flee" then
+            local nearPlayer, nearDist = getNearestPlayerDistance(pos)
+            if nearPlayer and nearDist < FLEE_RANGE then
+                local playerHrp = nearPlayer.Character and nearPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if playerHrp then
+                    local dx = pos.X - playerHrp.Position.X
+                    local dz = pos.Z - playerHrp.Position.Z
+                    local len = math.sqrt(dx*dx + dz*dz)
+                    if len > 0 then
+                        local tx = math.clamp(pos.X + (dx/len) * 20, -280, 280)
+                        local tz = math.clamp(pos.Z + (dz/len) * 20, -280, 280)
+                        humanoid:MoveTo(Vector3.new(tx, pos.Y, tz))
+                        nextMoveAt = now + 1.5
+                    end
+                end
+                continue
             end
-        elseif not isMoving and (now - lastMoveTime) > moveCooldown then
-            -- Wander: punto aleatorio cerca del spawn original
-            local angle  = math.random() * math.pi * 2
-            local radius = math.random(8, WANDER_RADIUS)
-            local tx = math.clamp(spawnPos.X + math.cos(angle) * radius, -300, 300)
-            local tz = math.clamp(spawnPos.Z + math.sin(angle) * radius, -300, 300)
-            local target = Vector3.new(tx, getGroundY(Vector3.new(tx, 0, tz), model), tz)
-            humanoid:MoveTo(target)
-            isMoving = true
-            lastMoveTime = now
-            moveCooldown = math.random(4, 9)
+        end
 
-            -- Esperar a que llegue o timeout (8s es el default de Roblox)
-            task.spawn(function()
-                humanoid.MoveToFinished:Wait()
-                isMoving = false
-            end)
+        -- Wander: pick nuevo destino cuando toca
+        if now >= nextMoveAt then
+            local angle  = math.random() * math.pi * 2
+            local radius = math.random(10, WANDER_RADIUS)
+            local tx = math.clamp(spawnPos.X + math.cos(angle) * radius, -280, 280)
+            local tz = math.clamp(spawnPos.Z + math.sin(angle) * radius, -280, 280)
+            -- Y: usar la posición actual del suelo (pos.Y ya refleja dónde está parado)
+            humanoid:MoveTo(Vector3.new(tx, pos.Y, tz))
+            -- Próximo cambio de dirección aleatorio, independiente por NPC
+            nextMoveAt = now + math.random(4, 10)
         end
     end
 end
@@ -296,14 +284,13 @@ function BrainrotSpawnService.spawnBrainrot(defId: string, position: Vector3?): 
 
     local instanceId = generateInstanceId()
     local model      = createNPCModel(def, position)
-    model.Name       = "BrainrotNPC_" .. instanceId  -- client finds model by this name
+    model.Name       = "BrainrotNPC_" .. instanceId
 
-    -- PivotTo mueve el modelo entero, no solo el HRP
+    -- Primero parentear, luego PivotTo (así los constraints físicos están activos)
+    model.Parent = Workspace
     if model.PrimaryPart then
         model:PivotTo(CFrame.new(position))
     end
-
-    model.Parent     = Workspace
 
     local state = {
         defId         = defId,
