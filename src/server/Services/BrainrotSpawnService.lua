@@ -73,22 +73,29 @@ local function createNPCModel(def: any, position: Vector3): Model
     if template then
         model = template:Clone()
         model.Name = "BrainrotNPC_" .. def.id
-        
+
+        -- Desanclar todos los parts del template clonado
+        for _, part in ipairs(model:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.Anchored = false
+            end
+        end
+
         hrp = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
         if not hrp then
             hrp = model:FindFirstChildOfClass("BasePart")
         end
         if hrp then
-            hrp.CFrame = CFrame.new(position)
             model.PrimaryPart = hrp
         end
-        
+
         humanoid = model:FindFirstChildOfClass("Humanoid")
         if humanoid then
             humanoid.WalkSpeed = WALK_SPEEDS[def.brainrotType] or 12
             humanoid.JumpPower = 0
             humanoid.MaxHealth = 100
             humanoid.Health = 100
+            humanoid.HipHeight = humanoid.HipHeight > 0 and humanoid.HipHeight or 2
             humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
         end
     else
@@ -189,69 +196,78 @@ local function getNearestPlayerDistance(position: Vector3): (Player?, number)
     return nearest, nearestDist
 end
 
+-- Raycast hacia abajo para encontrar el Y real del suelo en una posición XZ
+local raycastParams = RaycastParams.new()
+raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+
+local function getGroundY(xzPos: Vector3, model: Model): number
+    raycastParams.FilterDescendantsInstances = { model }
+    local result = Workspace:Raycast(
+        Vector3.new(xzPos.X, 500, xzPos.Z),
+        Vector3.new(0, -600, 0),
+        raycastParams
+    )
+    return result and (result.Position.Y + 3) or xzPos.Y
+end
+
 local function runAI(instanceId: string, def: any, spawnPos: Vector3)
+    local isMoving     = false
+    local moveCooldown = math.random(2, 5)
     local lastMoveTime = 0
-    local moveCooldown = 4 -- seconds between wander decisions
 
     while true do
         task.wait(AI_TICK)
 
         local state = ActiveBrainrots[instanceId]
-        if not state then break end -- despawned
-        if state.beingCaptured then
-            task.wait(0.5)
-            continue
-        end
+        if not state then break end
+        if state.beingCaptured then continue end
 
         local model    = state.model
         local hrp      = model and model:FindFirstChild("HumanoidRootPart")
-        local humanoid = model and model:FindFirstChild("Humanoid")
-        if not hrp or not humanoid then break end
+        local humanoid = model and model:FindFirstChildOfClass("Humanoid")
+        if not hrp or not humanoid or humanoid.Health <= 0 then break end
 
         local pos = hrp.Position
 
-        -- Fall detection: respawn at original position if fallen off map
+        -- Fall detection
         if pos.Y < FALL_Y_LIMIT then
-            hrp.CFrame = CFrame.new(spawnPos)
+            model:PivotTo(CFrame.new(spawnPos))
+            isMoving = false
             continue
         end
 
         local nearPlayer, nearDist = getNearestPlayerDistance(pos)
+        local now = os.clock()
 
-        if def.moveStyle == "Flee" or def.moveStyle == "Wander" then
-            if def.moveStyle == "Flee" and nearPlayer and nearDist < FLEE_RANGE then
-                -- Run away from nearest player
-                local playerHrp = nearPlayer.Character and nearPlayer.Character:FindFirstChild("HumanoidRootPart")
-                if playerHrp then
-                    local awayDir = (pos - playerHrp.Position).Unit
-                    local target  = pos + awayDir * 30
-                    -- Keep within island bounds (rough clamp)
-                    target = Vector3.new(
-                        math.clamp(target.X, -320, 320),
-                        pos.Y,
-                        math.clamp(target.Z, -320, 320)
-                    )
-                    humanoid:MoveTo(target)
-                    lastMoveTime = os.clock()
-                end
-            elseif os.clock() - lastMoveTime > moveCooldown then
-                -- Wander: pick random nearby point
-                local angle  = math.random() * math.pi * 2
-                local radius = math.random(10, WANDER_RADIUS)
-                local target = spawnPos + Vector3.new(
-                    math.cos(angle) * radius,
-                    0,
-                    math.sin(angle) * radius
-                )
-                target = Vector3.new(
-                    math.clamp(target.X, -320, 320),
-                    pos.Y,
-                    math.clamp(target.Z, -320, 320)
-                )
+        if def.moveStyle == "Flee" and nearPlayer and nearDist < FLEE_RANGE then
+            -- Flee: huir del jugador más cercano (ignora cooldown)
+            local playerHrp = nearPlayer.Character and nearPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if playerHrp then
+                local awayDir = (Vector3.new(pos.X, 0, pos.Z) - Vector3.new(playerHrp.Position.X, 0, playerHrp.Position.Z)).Unit
+                local tx = math.clamp(pos.X + awayDir.X * 25, -300, 300)
+                local tz = math.clamp(pos.Z + awayDir.Z * 25, -300, 300)
+                local target = Vector3.new(tx, getGroundY(Vector3.new(tx, 0, tz), model), tz)
                 humanoid:MoveTo(target)
-                lastMoveTime = os.clock()
-                moveCooldown = math.random(3, 7)
+                isMoving = true
+                lastMoveTime = now
             end
+        elseif not isMoving and (now - lastMoveTime) > moveCooldown then
+            -- Wander: punto aleatorio cerca del spawn original
+            local angle  = math.random() * math.pi * 2
+            local radius = math.random(8, WANDER_RADIUS)
+            local tx = math.clamp(spawnPos.X + math.cos(angle) * radius, -300, 300)
+            local tz = math.clamp(spawnPos.Z + math.sin(angle) * radius, -300, 300)
+            local target = Vector3.new(tx, getGroundY(Vector3.new(tx, 0, tz), model), tz)
+            humanoid:MoveTo(target)
+            isMoving = true
+            lastMoveTime = now
+            moveCooldown = math.random(4, 9)
+
+            -- Esperar a que llegue o timeout (8s es el default de Roblox)
+            task.spawn(function()
+                humanoid.MoveToFinished:Wait()
+                isMoving = false
+            end)
         end
     end
 end
@@ -281,6 +297,12 @@ function BrainrotSpawnService.spawnBrainrot(defId: string, position: Vector3?): 
     local instanceId = generateInstanceId()
     local model      = createNPCModel(def, position)
     model.Name       = "BrainrotNPC_" .. instanceId  -- client finds model by this name
+
+    -- PivotTo mueve el modelo entero, no solo el HRP
+    if model.PrimaryPart then
+        model:PivotTo(CFrame.new(position))
+    end
+
     model.Parent     = Workspace
 
     local state = {
