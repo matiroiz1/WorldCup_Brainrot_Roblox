@@ -291,6 +291,22 @@ function CardService.OnStart()
             CardService.requestStealAlbumCard(player, targetBaseId, albumKey, useBoost)
         end)
     end
+
+    Remotes.RequestStickToAlbum:Connect(function(player, cardIndex: number)
+        if type(cardIndex) ~= "number" then return end
+        local ok, reason = CardService.stickCardToAlbum(player, cardIndex)
+        if ok then
+            Remotes.Notification:FireClient(player, {
+                type = "success",
+                message = "📋 ¡Carta pegada al álbum!",
+            })
+        else
+            Remotes.Notification:FireClient(player, {
+                type = "warning",
+                message = "No se pudo pegar: " .. (reason or "error"),
+            })
+        end
+    end)
 end
 
 return CardService

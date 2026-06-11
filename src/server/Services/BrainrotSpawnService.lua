@@ -8,9 +8,12 @@ local Economy   = require(ReplicatedStorage.Config.Economy)
 
 -- ── Constants ─────────────────────────────────────────────────────────
 
-local FLEE_RANGE     = 20   -- studs: brainrot starts fleeing when player is this close
-local WANDER_RADIUS  = 45   -- max studs from spawn point for wander movement
-local AI_TICK        = 0.5  -- seconds between AI decisions
+local FLEE_RANGE      = 20
+local WANDER_RADIUS   = 45
+local AI_TICK         = 0.5
+local MAX_TOTAL_NPCS  = 20
+local DESPAWN_AFTER   = 300  -- seconds before an uncaptured NPC auto-despawns
+local FALL_Y_LIMIT    = -50
 
 local RARITY_COLORS = {
     Common    = BrickColor.new("Medium stone grey"),
@@ -126,6 +129,7 @@ local function createNPCModel(def: any, position: Vector3): Model
         humanoid.JumpPower     = 0
         humanoid.MaxHealth     = 100
         humanoid.Health        = 100
+        humanoid.HipHeight     = 2
         humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
         humanoid.Parent        = model
 
@@ -205,6 +209,13 @@ local function runAI(instanceId: string, def: any, spawnPos: Vector3)
         if not hrp or not humanoid then break end
 
         local pos = hrp.Position
+
+        -- Fall detection: respawn at original position if fallen off map
+        if pos.Y < FALL_Y_LIMIT then
+            hrp.CFrame = CFrame.new(spawnPos)
+            continue
+        end
+
         local nearPlayer, nearDist = getNearestPlayerDistance(pos)
 
         if def.moveStyle == "Flee" or def.moveStyle == "Wander" then
@@ -278,12 +289,20 @@ function BrainrotSpawnService.spawnBrainrot(defId: string, position: Vector3?): 
         spawnPos      = position,
         beingCaptured = false,
         capturedBy    = nil,
+        spawnedAt     = os.clock(),
     }
     ActiveBrainrots[instanceId] = state
 
     -- Start AI
     local thread = task.spawn(runAI, instanceId, def, position)
     AiTasks[instanceId]  = thread
+
+    -- Auto-despawn timer
+    task.delay(DESPAWN_AFTER, function()
+        if ActiveBrainrots[instanceId] then
+            BrainrotSpawnService.despawnBrainrot(instanceId)
+        end
+    end)
 
     -- Notify all clients
     Remotes.BrainrotSpawned:FireAllClients({
@@ -357,18 +376,25 @@ local function countActiveByType(brainrotType: string): number
     return count
 end
 
+local function totalActive(): number
+    local count = 0
+    for _ in pairs(ActiveBrainrots) do count += 1 end
+    return count
+end
+
 local function spawnLoop()
-    -- Initial delay so world loads before first spawn
     task.wait(5)
 
     while true do
         task.wait(Economy.SpawnIntervalSeconds)
 
+        if totalActive() >= MAX_TOTAL_NPCS then continue end
+
+        local spawnable = Brainrots.getAllSpawnable()
+
         -- Spawn commons up to cap
         local commonCount = countActiveByType("Common")
         if commonCount < Economy.MaxCommonBrainrotsPerZone * 3 then
-            local spawnable = Brainrots.getAllSpawnable()
-            -- Filter commons only for top-up
             local commons = {}
             for _, def in ipairs(spawnable) do
                 if def.brainrotType == "Common" then
@@ -376,15 +402,13 @@ local function spawnLoop()
                 end
             end
             if #commons > 0 then
-                local pick = commons[math.random(1, #commons)]
-                BrainrotSpawnService.spawnBrainrot(pick.id)
+                BrainrotSpawnService.spawnBrainrot(commons[math.random(1, #commons)].id)
             end
         end
 
-        -- Occasionally spawn a rare
+        -- 30% chance to spawn a Rare
         local rareCount = countActiveByType("Rare")
         if rareCount < Economy.MaxRareBrainrotsPerServer and math.random() < 0.3 then
-            local spawnable = Brainrots.getAllSpawnable()
             local rares = {}
             for _, def in ipairs(spawnable) do
                 if def.brainrotType == "Rare" then
@@ -395,6 +419,71 @@ local function spawnLoop()
                 BrainrotSpawnService.spawnBrainrot(rares[math.random(1, #rares)].id)
             end
         end
+
+        -- 10% chance to spawn an Elite
+        if math.random() < 0.1 then
+            local elites = {}
+            for _, def in ipairs(spawnable) do
+                if def.brainrotType == "Elite" then
+                    table.insert(elites, def)
+                end
+            end
+            if #elites > 0 then
+                BrainrotSpawnService.spawnBrainrot(elites[math.random(1, #elites)].id)
+            end
+        end
+    end
+end
+
+-- ── RequestDamage handler ─────────────────────────────────────────────
+
+local WEAPON_DAMAGE = {
+    Bate      = 34,
+    Boomerang = 25,
+    Pelota    = 20,
+}
+local MAX_HIT_DISTANCE = 25
+
+local function onRequestDamage(player: Player, info: any)
+    if typeof(info) ~= "table" then return end
+    local instanceId = info.instanceId
+    local weaponName = info.weaponName
+
+    local state = ActiveBrainrots[instanceId]
+    if not state then return end
+
+    -- Server-side distance check
+    local char = player.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local npcHrp = state.model and state.model:FindFirstChild("HumanoidRootPart")
+    if not hrp or not npcHrp then return end
+    if (hrp.Position - npcHrp.Position).Magnitude > MAX_HIT_DISTANCE then return end
+
+    local humanoid = state.model:FindFirstChildOfClass("Humanoid")
+    if not humanoid or humanoid.Health <= 0 then return end
+
+    local damage = WEAPON_DAMAGE[weaponName] or 20
+    humanoid.Health = math.max(0, humanoid.Health - damage)
+
+    if humanoid.Health <= 0 then
+        -- NPC killed — give reward via CardService
+        local ok, CardService = pcall(require, script.Parent.CardService)
+        local def = Brainrots.getById(state.defId)
+        if ok and CardService and def and def.rewardsTable then
+            CardService.giveRewardCard(player, def.rewardsTable)
+        end
+
+        local PDS = require(script.Parent.PlayerDataService)
+        if def then
+            local coins = Economy.CaptureCoins[def.brainrotType] or 15
+            PDS.addCoins(player, coins)
+            Remotes.Notification:FireClient(player, {
+                type = "success",
+                message = "⚽ +" .. coins .. " monedas — " .. def.name .. " eliminado!",
+            })
+        end
+
+        BrainrotSpawnService.despawnBrainrot(instanceId)
     end
 end
 
@@ -402,6 +491,8 @@ end
 
 function BrainrotSpawnService.OnStart()
     collectSpawnPoints()
+
+    Remotes.RequestDamage:Connect(onRequestDamage)
 
     if #spawnPoints == 0 then
         warn("[BrainrotSpawnService] No BrainrotSpawn parts found in Workspace.Map.BrainrotSpawns")

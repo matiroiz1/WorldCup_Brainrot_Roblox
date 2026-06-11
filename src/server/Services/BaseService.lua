@@ -5,7 +5,7 @@ local Workspace           = game:GetService("Workspace")
 local Remotes  = require(ReplicatedStorage.Remotes)
 local Economy  = require(ReplicatedStorage.Config.Economy)
 
-local BASE_COUNT = 15
+local BASE_COUNT = 10
 
 -- Runtime state: baseId -> userId (cleared each server session)
 local Occupied: { [string]: number } = {}

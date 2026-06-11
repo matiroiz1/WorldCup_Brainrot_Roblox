@@ -291,7 +291,7 @@ local function makeCardRow(parent, card: any, index: number)
     rarityLbl.Font              = Enum.Font.Gotham
     rarityLbl.Parent            = row
 
-    -- Secure button
+    -- Secure button / album stick button
     if not card.secured then
         local secureBtn = Instance.new("TextButton")
         secureBtn.Size            = UDim2.new(0, 90, 0, 36)
@@ -309,10 +309,28 @@ local function makeCardRow(parent, card: any, index: number)
             Remotes.RequestSecureCard:FireServer(index)
         end)
     else
+        -- "Pegar al Álbum" button for secured cards
+        local stickBtn = Instance.new("TextButton")
+        stickBtn.Size             = UDim2.new(0, 100, 0, 36)
+        stickBtn.Position         = UDim2.new(1, -210, 0.5, -18)
+        stickBtn.BackgroundColor3 = Color3.fromRGB(60, 80, 200)
+        stickBtn.BorderSizePixel  = 0
+        stickBtn.Text             = "📋 Pegar"
+        stickBtn.TextColor3       = Color3.new(1, 1, 1)
+        stickBtn.TextScaled       = true
+        stickBtn.Font             = Enum.Font.GothamBold
+        stickBtn.Parent           = row
+        Instance.new("UICorner", stickBtn).CornerRadius = UDim.new(0, 6)
+
+        -- card.securedIndex is set by renderInventory
+        stickBtn.MouseButton1Click:Connect(function()
+            Remotes.RequestStickToAlbum:FireServer(card.securedIndex or 1)
+        end)
+
         -- "Secured" badge
         local badge = Instance.new("TextLabel")
         badge.Size             = UDim2.new(0, 80, 0, 30)
-        badge.Position         = UDim2.new(1, -90, 0.5, -15)
+        badge.Position         = UDim2.new(1, -100, 0.5, -15)
         badge.BackgroundColor3 = Color3.fromRGB(20, 80, 20)
         badge.BorderSizePixel  = 0
         badge.Text             = "✅ Segura"
@@ -458,8 +476,10 @@ local function renderInventory(data: any)
     for _, c in ipairs(data.cards or {}) do
         table.insert(allCards, c)
     end
-    for _, c in ipairs(data.securedCards or {}) do
-        table.insert(allCards, c)
+    for si, c in ipairs(data.securedCards or {}) do
+        local copy = table.clone(c)
+        copy.securedIndex = si
+        table.insert(allCards, copy)
     end
 
     invSlotCount.Text = "Slots: " .. #(data.cards or {})
@@ -553,8 +573,10 @@ local function setupPhysicalAlbums()
     local basesFolder = map:WaitForChild("PlayerBases")
     
     local function setupBase(baseFolder)
-        local albumPart = baseFolder:WaitForChild("Album")
-        local albumSlots = baseFolder:WaitForChild("AlbumSlots")
+        local albumPart = baseFolder:WaitForChild("Album", 10)
+        if not albumPart then return end
+        local albumSlots = baseFolder:WaitForChild("AlbumSlots", 10)
+        if not albumSlots then return end
         
         -- Find or create SurfaceGui
         local sg = albumPart:FindFirstChild("AlbumSurface")
@@ -725,8 +747,9 @@ function InventoryController.OnStart()
             local map = Workspace:WaitForChild("Map")
             local basesFolder = map:WaitForChild("PlayerBases")
             local baseFolder = basesFolder:WaitForChild(baseId)
-            local album = baseFolder:WaitForChild("Album")
-            local prompt = album:WaitForChild("AlbumPrompt") :: ProximityPrompt?
+            local album = baseFolder:WaitForChild("Album", 10)
+            if not album then return end
+            local prompt = album:WaitForChild("AlbumPrompt", 10) :: ProximityPrompt?
             if prompt then
                 prompt.Triggered:Connect(function(player)
                     if player == Player then

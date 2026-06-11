@@ -173,10 +173,11 @@ pickerGui.Enabled       = false
 pickerGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 pickerGui.Parent        = PlayerGui
 
-local pickerOverlay = Instance.new("Frame")
+local pickerOverlay = Instance.new("TextButton")
 pickerOverlay.Size              = UDim2.fromScale(1, 1)
 pickerOverlay.BackgroundTransparency = 0.5
 pickerOverlay.BackgroundColor3  = Color3.fromRGB(0, 0, 0)
+pickerOverlay.Text              = ""
 pickerOverlay.Parent            = pickerGui
 
 local pickerPanel = Instance.new("Frame")

@@ -8,29 +8,27 @@ local Zones = {}
 
 Zones.Names = {
     Danger  = "DangerZone",
-    Trading = "TradeZone",
-    Pitch   = "Estadio",
+    Trading = "TradingZone",
+    Pitch   = "MiniPitch",
+    Safe    = "SafeZone",
 }
 
--- Which zones allow PvP
 Zones.PvPEnabled = {
-    DangerZone  = true,
-    TradeZone = true,
-    Estadio   = true,
+    DangerZone   = true,
+    TradingZone  = true,
+    MiniPitch    = true,
 }
 
--- Coin multiplier per zone
 Zones.CoinMultiplier = {
-    DangerZone  = 1.5,
-    TradeZone = 1.0,
-    Estadio   = 1.0,
+    DangerZone   = 1.5,
+    TradingZone  = 1.0,
+    MiniPitch    = 1.0,
 }
 
--- Drop rarity multiplier per zone
 Zones.RarityMultiplier = {
-    DangerZone  = 1.4,
-    TradeZone = 1.0,
-    Estadio   = 1.1,
+    DangerZone   = 1.4,
+    TradingZone  = 1.0,
+    MiniPitch    = 1.1,
 }
 
 return Zones

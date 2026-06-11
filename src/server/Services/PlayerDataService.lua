@@ -18,6 +18,7 @@ local DEFAULT_DATA = {
     albumProgress      = {},
     inventorySlots     = Economy.StartingInventorySlots,
     storageSlots       = Economy.StartingStorageSlots,
+    ownedWeapons       = {},
     toolUpgrades       = {},
     missionProgress    = {},
     dailyStreak        = 0,
@@ -95,6 +96,30 @@ local function onPlayerAdded(player: Player)
     Profiles[player.UserId] = profile
 
     setupLeaderstats(player, profile.Data)
+
+    -- Restore owned weapons to backpack
+    local weaponsFolder = ReplicatedStorage:FindFirstChild("Assets") and
+        ReplicatedStorage.Assets:FindFirstChild("Weapons")
+    if weaponsFolder and profile.Data.ownedWeapons then
+        for _, weaponName in ipairs(profile.Data.ownedWeapons) do
+            local tool = weaponsFolder:FindFirstChild(weaponName)
+            if tool then
+                local clone = tool:Clone()
+                clone.Parent = player.Backpack
+            end
+        end
+        -- Re-give weapons on respawn too
+        player.CharacterAdded:Connect(function()
+            task.wait(0.1)
+            for _, weaponName in ipairs(profile.Data.ownedWeapons) do
+                local tool = weaponsFolder:FindFirstChild(weaponName)
+                if tool and not player.Backpack:FindFirstChild(weaponName) then
+                    local clone = tool:Clone()
+                    clone.Parent = player.Backpack
+                end
+            end
+        end)
+    end
 
     -- Send initial data to client
     Remotes.PlayerDataLoaded:FireClient(player, {

@@ -115,12 +115,55 @@ end
 
 -- ── RequestPurchase handler (coin-based shop items) ───────────────────
 
+local WEAPON_PRICES = {
+    Bate      = 100,
+    Boomerang = 200,
+    Pelota    = 150,
+}
+
 local function onRequestPurchase(player: Player, itemType: string, _itemId: any)
     local PDS  = getPDS()
     local data = PDS.getData(player)
     if not data then return end
 
-    if itemType == "slot_inventory" then
+    if itemType == "weapon" then
+        local weaponName = _itemId
+        local cost = WEAPON_PRICES[weaponName]
+        if not cost then
+            Remotes.PurchaseResult:FireClient(player, { success = false, reason = "unknown_weapon" })
+            return
+        end
+        -- Check already owned
+        for _, w in ipairs(data.ownedWeapons or {}) do
+            if w == weaponName then
+                Remotes.PurchaseResult:FireClient(player, { success = false, reason = "already_owned" })
+                return
+            end
+        end
+        if data.coins < cost then
+            Remotes.PurchaseResult:FireClient(player, { success = false, reason = "insufficient_coins" })
+            return
+        end
+        PDS.update(player, function(d)
+            d.coins = d.coins - cost
+            d.ownedWeapons = d.ownedWeapons or {}
+            table.insert(d.ownedWeapons, weaponName)
+        end)
+        -- Give the tool to the player's backpack now
+        local weaponsFolder = game:GetService("ReplicatedStorage"):FindFirstChild("Assets")
+            and game:GetService("ReplicatedStorage").Assets:FindFirstChild("Weapons")
+        if weaponsFolder then
+            local tool = weaponsFolder:FindFirstChild(weaponName)
+            if tool then
+                local clone = tool:Clone()
+                clone.Parent = player.Backpack
+            end
+        end
+        local newData = PDS.getData(player)
+        Remotes.CoinsUpdated:FireClient(player, newData.coins)
+        Remotes.PurchaseResult:FireClient(player, { success = true, type = "weapon", weaponName = weaponName })
+
+    elseif itemType == "slot_inventory" then
         local bought = #data.cards  -- approximate: use how many extra slots bought
         local priceTable = Economy.SlotPrices.InventorySlot
         local slotsBought = math.max(0, data.inventorySlots - Economy.StartingInventorySlots)

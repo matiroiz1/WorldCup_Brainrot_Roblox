@@ -7,8 +7,7 @@ export type CardVariant = "Normal" | "Shiny" | "Golden" | "Signed" | "Glitch"
 export type CardOrigin = "Spawn" | "Event" | "Trade" | "Season" | "Match" | "Craft" | "Mission"
 export type BrainrotType = "Common" | "Rare" | "Elite" | "Legendary" | "Chaotic"
 export type ToolType = "StunGlove" | "Net" | "Smoke" | "Shield" | "SprintBoost" | "Detector"
-export type ZoneName = "SafeZone" | "DangerZone" | "PlazaCentral" | "Parque" | "Estadio"
-    | "MercadoNegro" | "Puerto" | "Barrio" | "ZonaEvento"
+export type ZoneName = "SafeZone" | "DangerZone" | "TradingZone" | "MiniPitch"
 
 -- Card definition (from Config)
 export type CardDef = {

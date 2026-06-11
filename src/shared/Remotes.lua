@@ -47,6 +47,10 @@ local definitions = Net.CreateDefinitions({
     RequestPrediction    = Net.Definitions.ClientToServerEvent(),
     PredictionResult     = Net.Definitions.ServerToClientEvent(),
 
+    -- Combat / Weapons
+    RequestDamage        = Net.Definitions.ClientToServerEvent(),
+    RequestStickToAlbum  = Net.Definitions.ClientToServerEvent(),
+
     -- Steal / PvP
     RequestSteal         = Net.Definitions.ClientToServerEvent(),
     StealResult          = Net.Definitions.ServerToClientEvent(),

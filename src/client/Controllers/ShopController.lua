@@ -12,6 +12,7 @@ local PlayerGui = Player:WaitForChild("PlayerGui")
 -- ── Local state ────────────────────────────────────────────────────────
 local currentBaseLevel = 1
 local currentCoins     = 0
+local ownedWeapons: { [string]: boolean } = {}
 
 local ShopController = {}
 
@@ -165,6 +166,42 @@ local function shopRow(name, desc, priceText, priceColor, order, onBuy)
 end
 
 -- ── Populate shop ──────────────────────────────────────────────────────
+
+local WEAPON_DEFS = {
+    { name = "Bate",      desc = "Golpe fuerte de corta distancia",  price = 100, emoji = "🏏" },
+    { name = "Boomerang", desc = "Vuelve al lanzador, rango medio",  price = 200, emoji = "🪃" },
+    { name = "Pelota",    desc = "Proyectil de fútbol, rango largo", price = 150, emoji = "⚽" },
+}
+
+local weaponRowRefs: { [string]: Frame } = {}
+
+local function buildWeaponsSection()
+    sectionHeader("⚔️  ARMAS", 5)
+
+    for i, wDef in ipairs(WEAPON_DEFS) do
+        local order = 5 + i
+        local function makeRow()
+            if weaponRowRefs[wDef.name] then
+                weaponRowRefs[wDef.name]:Destroy()
+            end
+            local isOwned = ownedWeapons[wDef.name]
+            local priceText  = isOwned and "✅ Comprado" or ("🪙 " .. wDef.price)
+            local priceColor = isOwned and C.panel or ((currentCoins >= wDef.price) and C.green or C.red)
+            local row = shopRow(
+                wDef.emoji .. " " .. wDef.name,
+                wDef.desc,
+                priceText, priceColor, order,
+                function()
+                    if not isOwned then
+                        Remotes.RequestPurchase:FireServer("weapon", wDef.name)
+                    end
+                end
+            )
+            weaponRowRefs[wDef.name] = row
+        end
+        makeRow()
+    end
+end
 
 local upgradeRowRef: Frame? = nil  -- re-rendered when base level changes
 
@@ -344,13 +381,17 @@ function ShopController.OnStart()
     Remotes.PlayerDataLoaded:Connect(function(data)
         currentBaseLevel = data.baseLevel or 1
         currentCoins     = data.coins or 0
+        for _, w in ipairs(data.ownedWeapons or {}) do
+            ownedWeapons[w] = true
+        end
     end)
 
     Remotes.BaseAssigned:Connect(function(info)
         currentBaseLevel = info.baseLevel or 1
     end)
 
-    -- Build shop content once
+    -- Build shop content
+    buildWeaponsSection()
     buildBaseSection()
     buildCoinPacksSection()
     buildSpecialPacksSection()
@@ -362,10 +403,10 @@ function ShopController.OnStart()
     -- PurchaseResult feedback
     Remotes.PurchaseResult:Connect(function(result)
         if result.success then
-            if result.type == "slot_inventory" then
-                -- InventoryController will update via InventoryUpdated; just notify
-            elseif result.type == "slot_storage" then
-                -- same
+            if result.type == "weapon" then
+                ownedWeapons[result.weaponName] = true
+                -- Rebuild weapon rows to show "✅ Comprado"
+                buildWeaponsSection()
             end
         end
     end)
