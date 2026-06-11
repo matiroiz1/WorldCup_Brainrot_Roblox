@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:github.com)",
+      "Bash(git clone *)",
+      "Bash(xcopy /E /I /H /Y temp_template\\\\* .)",
+      "Bash(rmdir /S /Q temp_template)",
+      "PowerShell(New-Item -ItemType Directory -Force \"c:\\\\Users\\\\matir\\\\OneDrive\\\\Desktop\\\\Facultad Matias\\\\WorldCup Brainrot PROYECTO\\\\src\\\\shared\\\\Config\")",
+      "PowerShell(New-Item -ItemType Directory -Force \"c:\\\\Users\\\\matir\\\\OneDrive\\\\Desktop\\\\Facultad Matias\\\\WorldCup Brainrot PROYECTO\\\\src\\\\shared\\\\Modules\")"
+    ]
+  }
+}

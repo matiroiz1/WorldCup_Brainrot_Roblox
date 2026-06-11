@@ -142,6 +142,7 @@ local function doCapture(player: Player, instanceId: string)
         data.weeklyScore    = data.weeklyScore + 1
         data.seasonScore    = data.seasonScore + 1
     end)
+    PDS.updateLeaderstats(player)
 
     -- Despawn the NPC
     BSS.despawnBrainrot(instanceId)

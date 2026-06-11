@@ -7,34 +7,30 @@
 local Zones = {}
 
 Zones.Names = {
-    Safe    = "SafeZone",
     Danger  = "DangerZone",
-    Trading = "TradingZone",
-    Pitch   = "MiniPitch",
+    Trading = "TradeZone",
+    Pitch   = "Estadio",
 }
 
--- Which zones allow PvP (Etapa 9)
+-- Which zones allow PvP
 Zones.PvPEnabled = {
-    SafeZone    = false,
     DangerZone  = true,
-    TradingZone = false,
-    MiniPitch   = false,
+    TradeZone = true,
+    Estadio   = true,
 }
 
--- Coin multiplier per zone (DangerZone pays more)
+-- Coin multiplier per zone
 Zones.CoinMultiplier = {
-    SafeZone    = 0.8,
     DangerZone  = 1.5,
-    TradingZone = 1.0,
-    MiniPitch   = 1.0,
+    TradeZone = 1.0,
+    Estadio   = 1.0,
 }
 
 -- Drop rarity multiplier per zone
 Zones.RarityMultiplier = {
-    SafeZone    = 0.8,
     DangerZone  = 1.4,
-    TradingZone = 1.0,
-    MiniPitch   = 1.1,
+    TradeZone = 1.0,
+    Estadio   = 1.1,
 }
 
 return Zones

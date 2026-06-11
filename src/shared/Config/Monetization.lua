@@ -76,6 +76,18 @@ Monetization.DevProducts = {
         description = "30 minutos de protección de cartas sin asegurar.",
         grant = { shieldMinutes = 30 },
     },
+    BaseUpgrade_4 = {
+        id = 999001007,
+        name = "Base Nivel 4",
+        description = "Mejora tu base al nivel 4 (requiere nivel 3).",
+        grant = { baseUpgradeLevel = 4 },
+    },
+    BaseUpgrade_5 = {
+        id = 999001008,
+        name = "Base Nivel 5",
+        description = "Mejora tu base al nivel 5 (requiere nivel 4).",
+        grant = { baseUpgradeLevel = 5 },
+    },
 }
 
 -- ── Lookup helpers ────────────────────────────────────────────────────

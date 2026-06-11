@@ -4,6 +4,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Remotes      = require(ReplicatedStorage.Remotes)
 local RarityUtils  = require(ReplicatedStorage.Modules.RarityUtils)
 local Cards        = require(ReplicatedStorage.Config.Cards)
+local Economy      = require(ReplicatedStorage.Config.Economy)
 
 local CardService = {}
 
@@ -140,7 +141,133 @@ function CardService.stickCardToAlbum(player: Player, cardIndex: number): (boole
         albumProgress = getPDS().getData(player).albumProgress,
     })
     fireInventoryUpdate(player)
+    
+    local BaseService = require(script.Parent.BaseService)
+    BaseService.syncPhysicalAlbum(player)
+    
     return true, "ok"
+end
+
+-- Despegar una carta propia del álbum instantáneamente
+function CardService.detachCardSelf(player: Player, albumKey: string): (boolean, string)
+    local PDS  = getPDS()
+    local data = PDS.getData(player)
+    if not data then return false, "data_not_loaded" end
+
+    if not data.albumProgress[albumKey] then
+        return false, "not_in_album"
+    end
+
+    if isinventoryFull(data) then
+        return false, "inventory_full"
+    end
+
+    -- Extraer el cardId original del albumKey (formato: "SetID_CardID")
+    local split = string.split(albumKey, "_")
+    local cardId = split[2]
+
+    local card = {
+        cardId     = cardId,
+        variant    = "Normal",
+        obtainedAt = os.time(),
+        secured    = false,
+    }
+
+    PDS.update(player, function(d)
+        d.albumProgress[albumKey] = nil
+        table.insert(d.cards, card)
+    end)
+
+    Remotes.AlbumUpdated:FireClient(player, {
+        albumProgress = getPDS().getData(player).albumProgress,
+    })
+    fireInventoryUpdate(player)
+    
+    local BaseService = require(script.Parent.BaseService)
+    BaseService.syncPhysicalAlbum(player)
+    
+    Remotes.Notification:FireClient(player, {type = "success", message = "Carta recuperada al inventario."})
+    return true, "ok"
+end
+
+-- Robar una carta del álbum de otra base
+function CardService.requestStealAlbumCard(thief: Player, targetBaseId: string, albumKey: string, useBoost: boolean)
+    local BaseService = require(script.Parent.BaseService)
+    local PDS = getPDS()
+    
+    -- Validar si la base está bloqueada
+    if BaseService.isBaseLocked(targetBaseId) then
+        Remotes.Notification:FireClient(thief, {type = "error", message = "¡La base está asegurada! No podés robar."})
+        return
+    end
+
+    local ownerId = BaseService.getBaseOwner(targetBaseId)
+    if not ownerId then return end
+    
+    local victim = Players:GetPlayerByUserId(ownerId)
+    if not victim then return end
+
+    local victimData = PDS.getData(victim)
+    if not victimData or not victimData.albumProgress[albumKey] then
+        Remotes.Notification:FireClient(thief, {type = "error", message = "La carta ya no está ahí."})
+        return
+    end
+
+    local thiefData = PDS.getData(thief)
+    if not thiefData then return end
+
+    if isinventoryFull(thiefData) then
+        Remotes.Notification:FireClient(thief, {type = "warning", message = "Tu inventario está lleno."})
+        return
+    end
+
+    -- Tiempo de despegue (base 10s, si usa boost y tiene plata 3s)
+    local stealTime = 10
+    if useBoost then
+        local boostCost = 50 -- Costo hardcodeado por ahora
+        if thiefData.coins >= boostCost then
+            PDS.update(thief, function(d) d.coins = d.coins - boostCost end)
+            Remotes.CoinsUpdated:FireClient(thief, thiefData.coins - boostCost)
+            stealTime = 3
+            Remotes.Notification:FireClient(thief, {type = "info", message = "¡Boost activado! Robo acelerado."})
+        else
+            Remotes.Notification:FireClient(thief, {type = "warning", message = "No tenés monedas para el boost."})
+        end
+    end
+
+    Remotes.Notification:FireClient(thief, {type = "info", message = "Despegando carta... ("..stealTime.."s)"})
+    Remotes.Notification:FireClient(victim, {type = "warning", message = "¡ALERTA! Están robando tu álbum."})
+
+    -- Iniciar cuenta regresiva (debería validarse la distancia en un loop real, pero aquí usamos wait simple para MVP)
+    task.delay(stealTime, function()
+        -- Revalidar datos después del tiempo
+        if not thief:IsDescendantOf(Players) or not victim:IsDescendantOf(Players) then return end
+        if BaseService.isBaseLocked(targetBaseId) then return end -- si el dueño logró bloquearla en ese tiempo
+        
+        local freshVictimData = PDS.getData(victim)
+        if not freshVictimData.albumProgress[albumKey] then return end
+
+        local split = string.split(albumKey, "_")
+        local cardId = split[2]
+
+        local stolenCard = {
+            cardId     = cardId,
+            variant    = "Normal",
+            obtainedAt = os.time(),
+            secured    = false,
+        }
+
+        PDS.update(victim, function(d) d.albumProgress[albumKey] = nil end)
+        PDS.update(thief, function(d) table.insert(d.cards, stolenCard) end)
+
+        Remotes.AlbumUpdated:FireClient(victim, {albumProgress = PDS.getData(victim).albumProgress})
+        fireInventoryUpdate(thief)
+        
+        BaseService.syncPhysicalAlbum(victim)
+        
+        Remotes.Notification:FireClient(thief, {type = "success", message = "¡Robaste la carta del álbum!"})
+        Remotes.Notification:FireClient(victim, {type = "error", message = "¡Te robaron una carta del álbum!"})
+    end)
 end
 
 -- ── Init ──────────────────────────────────────────────────────────────
@@ -151,6 +278,19 @@ function CardService.OnStart()
         if type(cardIndex) ~= "number" then return end
         CardService.secureCard(player, cardIndex)
     end)
+    
+    -- Agregar listeners temporales hasta definir remotes oficiales
+    if Remotes:FindFirstChild("DetachCardSelf") then
+        Remotes.DetachCardSelf:Connect(function(player, albumKey)
+            CardService.detachCardSelf(player, albumKey)
+        end)
+    end
+    
+    if Remotes:FindFirstChild("RequestStealAlbumCard") then
+        Remotes.RequestStealAlbumCard:Connect(function(player, targetBaseId, albumKey, useBoost)
+            CardService.requestStealAlbumCard(player, targetBaseId, albumKey, useBoost)
+        end)
+    end
 end
 
 return CardService
