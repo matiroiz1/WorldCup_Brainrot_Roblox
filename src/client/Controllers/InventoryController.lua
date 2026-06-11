@@ -548,6 +548,59 @@ local function openAlbumViewer(targetBaseId: string, victimName: string, albumPr
     activeScreen   = "album_viewer"
 end
 
+local PAGES_CONFIG = {
+    [1] = {
+        country = "Argentina",
+        flag = "🇦🇷",
+        cardId = "card_common_wc2026_arg",
+        activeSlot = 9,
+        players = {
+            "E. Martinez", "N. Molina", "C. Romero", "N. Otamendi", "E. Fernandez",
+            "A. Mac Allister", "R. De Paul", "J. Alvarez", "L. Messi", "A. Di Maria", "L. Martinez"
+        }
+    },
+    [2] = {
+        country = "Brasil",
+        flag = "🇧🇷",
+        cardId = "card_common_wc2026_bra",
+        activeSlot = 10,
+        players = {
+            "Alisson", "Danilo", "Marquinhos", "Gabriel", "Casemiro",
+            "B. Guimaraes", "Paqueta", "Raphinha", "Rodrygo", "Vinicius Jr", "Richarlison"
+        }
+    },
+    [3] = {
+        country = "Francia",
+        flag = "🇫🇷",
+        cardId = "card_common_wc2026_fra",
+        activeSlot = 7,
+        players = {
+            "Maignan", "Kounde", "Upamecano", "Saliba", "Hernandez",
+            "Tchouameni", "K. Mbappe", "Rabiot", "Griezmann", "Dembele", "Giroud"
+        }
+    },
+    [4] = {
+        country = "Inglaterra",
+        flag = "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
+        cardId = "card_common_wc2026_eng",
+        activeSlot = 9,
+        players = {
+            "Pickford", "Walker", "Stones", "Maguire", "Trippier",
+            "Rice", "Bellingham", "Saka", "H. Kane", "Foden", "Rashford"
+        }
+    },
+    [5] = {
+        country = "España",
+        flag = "🇪🇸",
+        cardId = "card_common_wc2026_esp",
+        activeSlot = 10,
+        players = {
+            "U. Simon", "Carvajal", "Le Normand", "Laporte", "Cucurella",
+            "Rodri", "F. Ruiz", "L. Yamal", "N. Williams", "D. Olmo", "Morata"
+        }
+    }
+}
+
 local function setupPhysicalAlbums()
     local map = workspace:WaitForChild("Map")
     local basesFolder = map:WaitForChild("PlayerBases")
@@ -555,6 +608,7 @@ local function setupPhysicalAlbums()
     local function setupBase(baseFolder)
         local albumPart = baseFolder:WaitForChild("Album")
         local albumSlots = baseFolder:WaitForChild("AlbumSlots")
+        local albumPage = baseFolder:WaitForChild("AlbumPage") :: IntValue
         
         -- Find or create SurfaceGui
         local sg = albumPart:FindFirstChild("AlbumSurface")
@@ -573,97 +627,149 @@ local function setupPhysicalAlbums()
             mainFrame = Instance.new("Frame")
             mainFrame.Name = "MainFrame"
             mainFrame.Size = UDim2.fromScale(1, 1)
-            mainFrame.BackgroundColor3 = Color3.fromRGB(30, 35, 45)
-            mainFrame.BorderSizePixel = 4
-            mainFrame.BorderColor3 = Color3.fromRGB(255, 215, 0)
+            mainFrame.BackgroundColor3 = Color3.fromRGB(240, 240, 245) -- book page white
+            mainFrame.BorderSizePixel = 6
+            mainFrame.BorderColor3 = Color3.fromRGB(35, 45, 60)
             mainFrame.Parent = sg
             
-            -- Title
-            local title = Instance.new("TextLabel")
-            title.Size = UDim2.new(1, 0, 0, 60)
-            title.BackgroundTransparency = 1
-            title.Text = "ÁLBUM DE CROMOS"
-            title.TextColor3 = Color3.new(1, 1, 1)
-            title.TextSize = 28
-            title.Font = Enum.Font.GothamBold
-            title.Parent = mainFrame
+            -- Header Bar
+            local header = Instance.new("Frame")
+            header.Name = "Header"
+            header.Size = UDim2.new(1, 0, 0, 80)
+            header.BackgroundColor3 = Color3.fromRGB(35, 45, 60)
+            header.BorderSizePixel = 0
+            header.Parent = mainFrame
             
-            -- UIGridLayout for slots
+            -- Title text
+            local title = Instance.new("TextLabel")
+            title.Name = "Title"
+            title.Size = UDim2.new(0.7, 0, 1, 0)
+            title.Position = UDim2.fromScale(0.05, 0)
+            title.BackgroundTransparency = 1
+            title.Text = "WE ARE ARGENTINA"
+            title.TextColor3 = Color3.new(1, 1, 1)
+            title.TextSize = 32
+            title.Font = Enum.Font.GothamBold
+            title.TextXAlignment = Enum.TextXAlignment.Left
+            title.Parent = header
+            
+            -- Flag label
+            local flagLbl = Instance.new("TextLabel")
+            flagLbl.Name = "Flag"
+            flagLbl.Size = UDim2.new(0.2, 0, 1, 0)
+            flagLbl.Position = UDim2.fromScale(0.75, 0)
+            flagLbl.BackgroundTransparency = 1
+            flagLbl.Text = "🇦🇷"
+            flagLbl.TextSize = 44
+            flagLbl.TextXAlignment = Enum.TextXAlignment.Right
+            flagLbl.Parent = header
+            
+            -- Grid area for cards
+            local gridFrame = Instance.new("Frame")
+            gridFrame.Name = "GridFrame"
+            gridFrame.Size = UDim2.new(1, 0, 1, -80)
+            gridFrame.Position = UDim2.fromScale(0, 80)
+            gridFrame.BackgroundTransparency = 1
+            gridFrame.Parent = mainFrame
+            
             local grid = Instance.new("UIGridLayout")
-            grid.CellSize = UDim2.new(0, 100, 0, 140)
-            grid.CellPadding = UDim2.new(0, 12, 0, 12)
+            grid.CellSize = UDim2.new(0, 110, 0, 150)
+            grid.CellPadding = UDim2.new(0, 14, 0, 14)
             grid.HorizontalAlignment = Enum.HorizontalAlignment.Center
             grid.VerticalAlignment = Enum.VerticalAlignment.Center
             grid.SortOrder = Enum.SortOrder.LayoutOrder
-            grid.Parent = mainFrame
+            grid.Parent = gridFrame
             
-            local wc2026Cards = {
-                { id = "card_common_wc2026_arg", name = "Argentina", order = 1 },
-                { id = "card_common_wc2026_bra", name = "Brasil", order = 2 },
-                { id = "card_common_wc2026_fra", name = "Francia", order = 3 },
-                { id = "card_common_wc2026_eng", name = "Inglaterra", order = 4 },
-                { id = "card_common_wc2026_esp", name = "España", order = 5 },
-                { id = "card_rare_wc2026_player_random", name = "Figura", order = 6 },
-                { id = "card_epic_wc2026_player_random", name = "Estrella", order = 7 }
-            }
-            
-            for _, info in ipairs(wc2026Cards) do
+            -- Create 11 slots
+            for slotIndex = 1, 11 do
                 local slot = Instance.new("Frame")
-                slot.Name = info.id
+                slot.Name = "Slot_" .. slotIndex
                 slot.BackgroundColor3 = Color3.fromRGB(50, 55, 65)
                 slot.BorderSizePixel = 2
-                slot.LayoutOrder = info.order
-                slot.Parent = mainFrame
+                slot.BorderColor3 = Color3.fromRGB(150, 155, 165)
+                slot.LayoutOrder = slotIndex
+                slot.Parent = gridFrame
                 
                 local label = Instance.new("TextLabel")
                 label.Name = "Label"
                 label.Size = UDim2.fromScale(1, 1)
                 label.BackgroundTransparency = 1
-                label.Text = "#" .. info.order .. "\n" .. info.name
-                label.TextColor3 = Color3.fromRGB(150, 150, 150)
+                label.Text = "#" .. slotIndex
+                label.TextColor3 = Color3.fromRGB(180, 185, 195)
                 label.TextSize = 12
+                label.TextWrapped = true
                 label.Font = Enum.Font.GothamMedium
                 label.Parent = slot
             end
         end
         
-        local function updateSlot(val)
-            local slot = mainFrame:FindFirstChild(val.Name)
-            if slot then
-                local label = slot:FindFirstChild("Label") :: TextLabel?
-                if label then
-                    if val.Value then
-                        slot.BackgroundColor3 = Color3.fromRGB(35, 140, 65)
-                        label.TextColor3 = Color3.new(1, 1, 1)
-                        local country = val.Name:split("_")[3]:upper()
-                        label.Text = "COMPLETADO\n" .. country
-                    else
-                        slot.BackgroundColor3 = Color3.fromRGB(50, 55, 65)
-                        label.TextColor3 = Color3.fromRGB(150, 150, 150)
-                        local order = slot.LayoutOrder
-                        local names = { "ARGENTINA", "BRASIL", "FRANCIA", "INGLATERRA", "ESPAÑA", "FIGURA", "ESTRELLA" }
-                        label.Text = "#" .. order .. "\n" .. names[order]
+        local header = mainFrame:WaitForChild("Header")
+        local title = header:WaitForChild("Title") :: TextLabel
+        local flagLbl = header:WaitForChild("Flag") :: TextLabel
+        local gridFrame = mainFrame:WaitForChild("GridFrame")
+        
+        local function renderPage()
+            local page = albumPage.Value
+            local config = PAGES_CONFIG[page] or PAGES_CONFIG[1]
+            
+            title.Text = "WE ARE " .. config.country:upper()
+            flagLbl.Text = config.flag
+            
+            -- Get album data value
+            local hasActiveCard = false
+            local targetVal = albumSlots:FindFirstChild(config.cardId)
+            if targetVal and targetVal:IsA("BoolValue") then
+                hasActiveCard = targetVal.Value
+            end
+            
+            for slotIndex = 1, 11 do
+                local slot = gridFrame:FindFirstChild("Slot_" .. slotIndex)
+                if slot then
+                    local label = slot:FindFirstChild("Label") :: TextLabel?
+                    if label then
+                        local playerName = config.players[slotIndex] or "Jugador"
+                        
+                        if slotIndex == config.activeSlot then
+                            if hasActiveCard then
+                                -- Completed card
+                                slot.BackgroundColor3 = Color3.fromRGB(35, 160, 75)
+                                slot.BorderColor3 = Color3.fromRGB(255, 215, 0)
+                                label.TextColor3 = Color3.new(1, 1, 1)
+                                label.Text = "★ CRACK ★\n" .. playerName:upper()
+                            else
+                                -- Locked/missing card
+                                slot.BackgroundColor3 = Color3.fromRGB(80, 85, 95)
+                                slot.BorderColor3 = Color3.fromRGB(220, 50, 50)
+                                label.TextColor3 = Color3.fromRGB(220, 200, 200)
+                                label.Text = "#" .. slotIndex .. "\n" .. playerName .. "\n(BLOQUEADO)"
+                            end
+                        else
+                            -- Dummy slots
+                            slot.BackgroundColor3 = Color3.fromRGB(210, 210, 215)
+                            slot.BorderColor3 = Color3.fromRGB(170, 175, 180)
+                            label.TextColor3 = Color3.fromRGB(100, 100, 105)
+                            label.Text = "#" .. slotIndex .. "\n" .. playerName
+                        end
                     end
                 end
             end
         end
         
+        renderPage()
+        
+        albumPage.Changed:Connect(renderPage)
+        
         for _, val in ipairs(albumSlots:GetChildren()) do
             if val:IsA("BoolValue") then
-                updateSlot(val)
-                val.Changed:Connect(function()
-                    updateSlot(val)
-                end)
+                val.Changed:Connect(renderPage)
             end
         end
         
         albumSlots.ChildAdded:Connect(function(val)
             if val:IsA("BoolValue") then
                 task.wait(0.05)
-                updateSlot(val)
-                val.Changed:Connect(function()
-                    updateSlot(val)
-                end)
+                renderPage()
+                val.Changed:Connect(renderPage)
             end
         end)
     end

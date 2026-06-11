@@ -32,11 +32,9 @@ Economy.SlotPrices = {
 
 -- ── Tool upgrade prices (coins) ───────────────────────────────────────
 Economy.ToolUpgradePrices = {
-    StunGlove  = { 120, 300, 600 },
-    Net        = { 150, 350, 700 },
-    Shield     = { 200, 400, 800 },
-    SprintBoost = { 100, 250, 500 },
-    Detector   = { 180, 400, 800 },
+    Bate       = { 120, 300, 600 },
+    Boomerang  = { 300, 600, 1200 },
+    Pelota     = { 800, 1600, 3200 },
 }
 
 -- ── Trade ─────────────────────────────────────────────────────────────

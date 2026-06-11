@@ -1,10 +1,12 @@
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace         = game:GetService("Workspace")
+local ServerScriptService = game:GetService("ServerScriptService")
 
 local Remotes   = require(ReplicatedStorage.Remotes)
 local Brainrots = require(ReplicatedStorage.Config.Brainrots)
 local Economy   = require(ReplicatedStorage.Config.Economy)
+local PlayerDataService = require(ServerScriptService.Services.PlayerDataService)
 
 -- ── Constants ─────────────────────────────────────────────────────────
 
@@ -68,10 +70,18 @@ local function createNPCModel(def: any, position: Vector3): Model
     local humanoid
 
     if template then
-        model = template:Clone()
-        model.Name = "BrainrotNPC_" .. def.id
+        if template:IsA("Folder") then
+            model = Instance.new("Model")
+            model.Name = "BrainrotNPC_" .. def.id
+            for _, child in ipairs(template:GetChildren()) do
+                child:Clone().Parent = model
+            end
+        else
+            model = template:Clone()
+            model.Name = "BrainrotNPC_" .. def.id
+        end
         
-        hrp = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
+        hrp = model:FindFirstChild("HumanoidRootPart")
         if not hrp then
             hrp = model:FindFirstChildOfClass("BasePart")
         end
@@ -84,8 +94,9 @@ local function createNPCModel(def: any, position: Vector3): Model
         if humanoid then
             humanoid.WalkSpeed = WALK_SPEEDS[def.brainrotType] or 12
             humanoid.JumpPower = 0
-            humanoid.MaxHealth = 100
-            humanoid.Health = 100
+            local maxH = (def.captureDifficulty or 1) * 20
+            humanoid.MaxHealth = maxH
+            humanoid.Health = maxH
             humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
         end
     else
@@ -124,8 +135,9 @@ local function createNPCModel(def: any, position: Vector3): Model
         humanoid = Instance.new("Humanoid")
         humanoid.WalkSpeed     = WALK_SPEEDS[def.brainrotType] or 12
         humanoid.JumpPower     = 0
-        humanoid.MaxHealth     = 100
-        humanoid.Health        = 100
+        local maxH = (def.captureDifficulty or 1) * 20
+        humanoid.MaxHealth     = maxH
+        humanoid.Health        = maxH
         humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
         humanoid.Parent        = model
 
@@ -159,6 +171,21 @@ local function createNPCModel(def: any, position: Vector3): Model
         rarityLbl.TextScaled         = true
         rarityLbl.Font               = Enum.Font.Gotham
         rarityLbl.Parent             = bb
+        
+        local healthBg = Instance.new("Frame")
+        healthBg.Name = "HealthBg"
+        healthBg.Size = UDim2.new(0.8, 0, 0.15, 0)
+        healthBg.Position = UDim2.fromScale(0.1, 1.0)
+        healthBg.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
+        healthBg.BorderSizePixel = 0
+        healthBg.Parent = bb
+        
+        local healthBar = Instance.new("Frame")
+        healthBar.Name = "HealthBar"
+        healthBar.Size = UDim2.fromScale(1, 1)
+        healthBar.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+        healthBar.BorderSizePixel = 0
+        healthBar.Parent = healthBg
     end
 
     return model
@@ -281,12 +308,55 @@ function BrainrotSpawnService.spawnBrainrot(defId: string, position: Vector3?): 
     }
     ActiveBrainrots[instanceId] = state
 
+    -- Setup ClickDetector for Capture
+    local clickDetector = Instance.new("ClickDetector")
+    clickDetector.MaxActivationDistance = 25
+    clickDetector.Parent = model
+
+    clickDetector.MouseClick:Connect(function(player)
+        local currState = ActiveBrainrots[instanceId]
+        if not currState or currState.beingCaptured then return end
+        
+        local humanoid = model:FindFirstChildOfClass("Humanoid")
+        if not humanoid or humanoid.Health <= 0 then return end
+        
+        local damage = 10
+        local char = player.Character
+        local tool = char and char:FindFirstChildOfClass("Tool")
+        if tool then
+            if tool.Name == "Bate" then damage = 25
+            elseif tool.Name == "Boomerang" then damage = 40
+            elseif tool.Name == "Pelota" then damage = 60
+            end
+        end
+        
+        humanoid.Health = humanoid.Health - damage
+        
+        local hrp = model:FindFirstChild("HumanoidRootPart")
+        local bb = hrp and hrp:FindFirstChildOfClass("BillboardGui")
+        if bb then
+            local bg = bb:FindFirstChild("HealthBg")
+            if bg and bg:FindFirstChild("HealthBar") then
+                bg.HealthBar.Size = UDim2.fromScale(math.max(0, humanoid.Health / humanoid.MaxHealth), 1)
+            end
+        end
+        
+        if humanoid.Health <= 0 then
+            if BrainrotSpawnService.lockForCapture(instanceId, player.UserId) then
+                local rewardAmount = Economy.CaptureCoins[def.brainrotType] or 15
+                PlayerDataService.addCoins(player, rewardAmount)
+                print(player.Name .. " captured " .. def.name .. " and earned " .. rewardAmount .. " coins!")
+                BrainrotSpawnService.despawnBrainrot(instanceId)
+            end
+        end
+    end)
+
     -- Start AI
     local thread = task.spawn(runAI, instanceId, def, position)
     AiTasks[instanceId]  = thread
 
     -- Notify all clients
-    Remotes.BrainrotSpawned:FireAllClients({
+    Remotes.BrainrotSpawned:SendToAllPlayers({
         instanceId = instanceId,
         defId      = defId,
         position   = position,
@@ -315,7 +385,7 @@ function BrainrotSpawnService.despawnBrainrot(instanceId: string)
 
     ActiveBrainrots[instanceId] = nil
 
-    Remotes.BrainrotDespawned:FireAllClients({ instanceId = instanceId })
+    Remotes.BrainrotDespawned:SendToAllPlayers({ instanceId = instanceId })
 end
 
 function BrainrotSpawnService.getActive(): { [string]: any }
@@ -348,7 +418,13 @@ end
 
 local function countActiveByType(brainrotType: string): number
     local count = 0
-    for _, state in pairs(ActiveBrainrots) do
+    for id, state in pairs(ActiveBrainrots) do
+        if state.model and state.model.Parent == nil then
+            -- Fallback si Roblox destruyó el modelo (se cayó del mapa)
+            BrainrotSpawnService.despawnBrainrot(id)
+            continue
+        end
+        
         local def = Brainrots.getById(state.defId)
         if def and def.brainrotType == brainrotType then
             count += 1
@@ -401,6 +477,7 @@ end
 -- ── Init ──────────────────────────────────────────────────────────────
 
 function BrainrotSpawnService.OnStart()
+    require(ReplicatedStorage.AssetBuilder).BuildAll()
     collectSpawnPoints()
 
     if #spawnPoints == 0 then

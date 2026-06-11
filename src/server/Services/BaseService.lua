@@ -5,7 +5,7 @@ local Workspace           = game:GetService("Workspace")
 local Remotes  = require(ReplicatedStorage.Remotes)
 local Economy  = require(ReplicatedStorage.Config.Economy)
 
-local BASE_COUNT = 15
+local BASE_COUNT = 10
 
 -- Runtime state: baseId -> userId (cleared each server session)
 local Occupied: { [string]: number } = {}
@@ -390,6 +390,34 @@ local function setupBasePrompts()
                             -- Abrir visor del álbum de la víctima para el ladrón
                             Remotes.ViewAlbum:FireClient(player, baseId, victim.DisplayName, victimData.albumProgress or {})
                         end
+                    end)
+                end
+            end
+
+            -- Left Arrow Prompt
+            local leftArrow = folder:FindFirstChild("LeftArrow")
+            if leftArrow then
+                local prompt = leftArrow:FindFirstChild("LeftPrompt") :: ProximityPrompt?
+                local pageVal = folder:FindFirstChild("AlbumPage") :: IntValue?
+                if prompt and pageVal then
+                    prompt.Triggered:Connect(function(player)
+                        local newVal = pageVal.Value - 1
+                        if newVal < 1 then newVal = 5 end
+                        pageVal.Value = newVal
+                    end)
+                end
+            end
+            
+            -- Right Arrow Prompt
+            local rightArrow = folder:FindFirstChild("RightArrow")
+            if rightArrow then
+                local prompt = rightArrow:FindFirstChild("RightPrompt") :: ProximityPrompt?
+                local pageVal = folder:FindFirstChild("AlbumPage") :: IntValue?
+                if prompt and pageVal then
+                    prompt.Triggered:Connect(function(player)
+                        local newVal = pageVal.Value + 1
+                        if newVal > 5 then newVal = 1 end
+                        pageVal.Value = newVal
                     end)
                 end
             end

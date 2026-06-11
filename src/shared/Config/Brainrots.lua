@@ -1,7 +1,6 @@
 --[[
     Config/Brainrots.lua
-    Table of all brainrot NPC definitions for WorldCup Brainrot MVP.
-    10 brainrots: 5 Common, 2 Rare, 2 Elite, 1 Legendary
+    Table of all brainrot NPC definitions for WorldCup Brainrot.
 ]]
 
 local Brainrots = {}
@@ -95,47 +94,46 @@ Brainrots["brainrot_vendedor"] = {
 
 -- ── Rare (every few minutes) ──────────────────────────────────────────
 
-Brainrots["brainrot_dt"] = {
-    id = "brainrot_dt",
-    name = "DT Obsesionado",
+Brainrots["brainrot_vuvuzela"] = {
+    id = "brainrot_vuvuzela",
+    name = "Vuvuzela Monster",
     brainrotType = "Rare",
-    spawnWeight = 10,
+    spawnWeight = 15,
     spawnZones = { "DangerZone" },
     moveStyle = "Flee",
     captureDifficulty = 3,
     rewardsTable = {
-        { cardId = "card_rare_wc2026_player_random",     weight = 55 },
-        { cardId = "card_epic_wc2026_player_random",     weight = 35 },
-        { cardId = "card_legendary_historical_random",   weight = 10 },
+        { cardId = "card_rare_wc2026_player_random",     weight = 60 },
+        { cardId = "card_epic_wc2026_player_random",     weight = 40 },
     },
     canFightBack = false,
     eventOnly = false,
 }
 
-Brainrots["brainrot_mascota"] = {
-    id = "brainrot_mascota",
-    name = "Mascota Oficial Mutante",
+Brainrots["brainrot_hincha_ultra"] = {
+    id = "brainrot_hincha_ultra",
+    name = "Hincha Ultra",
     brainrotType = "Rare",
-    spawnWeight = 8,
+    spawnWeight = 12,
     spawnZones = { "DangerZone", "MiniPitch" },
-    moveStyle = "Flee",
+    moveStyle = "Chase",
     captureDifficulty = 3,
     rewardsTable = {
         { cardId = "card_rare_wc2026_player_random",     weight = 50 },
-        { cardId = "card_epic_wc2026_player_random",     weight = 35 },
-        { cardId = "card_legendary_historical_random",   weight = 15 },
+        { cardId = "card_epic_wc2026_player_random",     weight = 40 },
+        { cardId = "card_legendary_historical_random",   weight = 10 },
     },
-    canFightBack = false,
+    canFightBack = true,
     eventOnly = false,
 }
 
 -- ── Elite (fixed-hour events) ─────────────────────────────────────────
 
-Brainrots["brainrot_capitan"] = {
-    id = "brainrot_capitan",
-    name = "Capitán Dorado",
+Brainrots["brainrot_bombini"] = {
+    id = "brainrot_bombini",
+    name = "Bombini Crocodilo",
     brainrotType = "Elite",
-    spawnWeight = 4,
+    spawnWeight = 5,
     spawnZones = { "DangerZone" },
     moveStyle = "Flee",
     captureDifficulty = 5,
@@ -144,18 +142,18 @@ Brainrots["brainrot_capitan"] = {
         { cardId = "card_legendary_historical_random",   weight = 35 },
         { cardId = "card_golden_legend_random",          weight = 15 },
     },
-    canFightBack = true,
+    canFightBack = false,
     eventOnly = false,
 }
 
-Brainrots["brainrot_portero_supremo"] = {
-    id = "brainrot_portero_supremo",
-    name = "Portero Supremo",
+Brainrots["brainrot_tralalero"] = {
+    id = "brainrot_tralalero",
+    name = "Tralalero Referero",
     brainrotType = "Elite",
-    spawnWeight = 3,
+    spawnWeight = 4,
     spawnZones = { "DangerZone" },
-    moveStyle = "Chase",
-    captureDifficulty = 6,
+    moveStyle = "Flee",
+    captureDifficulty = 5,
     rewardsTable = {
         { cardId = "card_epic_wc2026_player_random",     weight = 40 },
         { cardId = "card_legendary_historical_random",   weight = 40 },
@@ -167,19 +165,36 @@ Brainrots["brainrot_portero_supremo"] = {
 
 -- ── Legendary (server-wide event) ────────────────────────────────────
 
-Brainrots["brainrot_legendario"] = {
-    id = "brainrot_legendario",
-    name = "La Leyenda Viviente",
+Brainrots["brainrot_messi_dorado"] = {
+    id = "brainrot_messi_dorado",
+    name = "Messi Dorado",
     brainrotType = "Legendary",
     spawnWeight = 1,
     spawnZones = { "DangerZone" },
     moveStyle = "Flee",
     captureDifficulty = 10,
     rewardsTable = {
-        { cardId = "card_legendary_historical_random",   weight = 40 },
-        { cardId = "card_golden_legend_random",          weight = 35 },
-        { cardId = "card_golden_cr7",                    weight = 10 },
-        { cardId = "card_golden_messi",                  weight = 10 },
+        { cardId = "card_golden_messi",                  weight = 50 },
+        { cardId = "card_legendary_historical_random",   weight = 30 },
+        { cardId = "card_golden_legend_random",          weight = 15 },
+        { cardId = "card_signed_legend_random",          weight = 5 },
+    },
+    canFightBack = false,
+    eventOnly = true,
+}
+
+Brainrots["brainrot_cr7_fuego"] = {
+    id = "brainrot_cr7_fuego",
+    name = "CR7 de Fuego",
+    brainrotType = "Legendary",
+    spawnWeight = 1,
+    spawnZones = { "DangerZone" },
+    moveStyle = "Chase",
+    captureDifficulty = 10,
+    rewardsTable = {
+        { cardId = "card_golden_cr7",                    weight = 50 },
+        { cardId = "card_legendary_historical_random",   weight = 30 },
+        { cardId = "card_golden_legend_random",          weight = 15 },
         { cardId = "card_signed_legend_random",          weight = 5 },
     },
     canFightBack = true,

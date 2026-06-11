@@ -5,6 +5,7 @@
 
     "ReplicatedStorage": {
       "$path": "src/shared",
+      "$ignoreUnknownInstances": true,
 
       "Packages": {
         "$path": "Packages"
@@ -27,8 +28,10 @@
 
     "Workspace": {
       "$className": "Workspace",
+      "$ignoreUnknownInstances": true,
       "Map": {
         "$className": "Folder",
+        "$ignoreUnknownInstances": true,
         "SafeZone": {
           "$className": "Folder"
         },

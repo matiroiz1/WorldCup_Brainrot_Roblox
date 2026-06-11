@@ -76,32 +76,50 @@ local isServer = RunService:IsServer()
 wrapper.Server = definitions.Server
 wrapper.Client = definitions.Client
 
-function wrapper:FindFirstChild(key: string)
-    local ok, event = pcall(function()
-        if isServer then
-            return definitions.Server:Get(key)
-        else
-            return definitions.Client:Get(key)
+local proxyCache = {}
+
+local function getProxy(key: string)
+    if proxyCache[key] then return proxyCache[key] end
+    
+    local proxy = {}
+    setmetatable(proxy, {
+        __index = function(_, k)
+            if isServer then
+                if k == "FireClient" then return function(_, player, ...) local e = definitions.Server:Get(key); e:SendToPlayer(player, ...) end end
+                if k == "FireAllClients" then return function(_, ...) local e = definitions.Server:Get(key); e:SendToAllPlayers(...) end end
+            else
+                if k == "FireServer" then return function(_, ...) local e = definitions.Client:Get(key); e:SendToServer(...) end end
+            end
+            
+            -- Fallback for any other method (Connect, SendToServer, etc.)
+            return function(_, ...)
+                local event = isServer and definitions.Server:Get(key) or definitions.Client:Get(key)
+                local val = event[k]
+                if type(val) == "function" then
+                    return val(event, ...)
+                end
+                return val
+            end
         end
-    end)
-    return if ok then event else nil
+    })
+    
+    proxyCache[key] = proxy
+    return proxy
+end
+
+function wrapper:FindFirstChild(key: string)
+    return getProxy(key)
 end
 
 setmetatable(wrapper, {
     __index = function(self, key)
-        -- If they check for Server or Client directly
         if key == "Server" or key == "Client" then
             return definitions[key]
         elseif key == "FindFirstChild" then
             return wrapper.FindFirstChild
         end
         
-        -- Otherwise, automatically resolve using Get on the current side
-        if isServer then
-            return definitions.Server:Get(key)
-        else
-            return definitions.Client:Get(key)
-        end
+        return getProxy(key)
     end
 })
 

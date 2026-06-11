@@ -97,7 +97,7 @@ local function onPlayerAdded(player: Player)
     setupLeaderstats(player, profile.Data)
 
     -- Send initial data to client
-    Remotes.PlayerDataLoaded:FireClient(player, {
+    Remotes.PlayerDataLoaded:SendToPlayer(player, {
         coins          = profile.Data.coins,
         eventTokens    = profile.Data.eventTokens,
         cards          = profile.Data.cards,
@@ -142,7 +142,7 @@ function PlayerDataService.addCoins(player: Player, amount: number)
     end)
     local profile = Profiles[player.UserId]
     if profile then
-        Remotes.CoinsUpdated:FireClient(player, profile.Data.coins)
+        Remotes.CoinsUpdated:SendToPlayer(player, profile.Data.coins)
         local ls = player:FindFirstChild("leaderstats")
         if ls then
             local v = ls:FindFirstChild("Coins")
@@ -172,7 +172,7 @@ function PlayerDataService.addTokens(player: Player, amount: number)
     end)
     local profile = Profiles[player.UserId]
     if profile then
-        Remotes.TokensUpdated:FireClient(player, profile.Data.eventTokens)
+        Remotes.TokensUpdated:SendToPlayer(player, profile.Data.eventTokens)
     end
 end
 

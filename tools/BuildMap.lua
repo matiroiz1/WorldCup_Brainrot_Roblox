@@ -1,302 +1,543 @@
--- WORLD CUP BRAINROT — Map Builder
--- Pegar en Roblox Studio Command Bar (Edit mode, NO Play mode)
--- Ring radius reducido a 140 studs (original era 255)
--- Layout de zonas sin cambios (SafeZone central, TradingZone/MiniPitch en anillo medio, DangerZone afuera)
+-- WORLD CUP BRAINROT — Classic Blocky Simulator Map Builder
+-- Paste this into the Roblox Studio Command Bar (Edit mode) to generate the map.
 
 local ws = workspace
 
--- ── helpers ──────────────────────────────────────────────────────────────
+-- ── 1. WORKSPACE FOLDER HIERARCHY ──────────────────────────────────────────
 
-local function clearFolder(f)
-	for _, c in ipairs(f:GetChildren()) do c:Destroy() end
-end
+local mapFolder = ws:FindFirstChild("Map") or Instance.new("Folder", ws)
+mapFolder.Name = "Map"
 
-local function getOrCreate(parent, name, class)
-	local f = parent:FindFirstChild(name)
-	if f then
-		clearFolder(f)
-		return f
+local zonesFolder = ws:FindFirstChild("Zones") or Instance.new("Folder", ws)
+zonesFolder.Name = "Zones"
+
+local playerBasesFolder = mapFolder:FindFirstChild("PlayerBases") or Instance.new("Folder", mapFolder)
+playerBasesFolder.Name = "PlayerBases"
+
+local brainrotSpawnsFolder = mapFolder:FindFirstChild("BrainrotSpawns") or Instance.new("Folder", mapFolder)
+brainrotSpawnsFolder.Name = "BrainrotSpawns"
+
+local decorationFolder = mapFolder:FindFirstChild("Decoration") or Instance.new("Folder", mapFolder)
+decorationFolder.Name = "Decoration"
+
+-- Clear existing objects to prevent duplicates
+playerBasesFolder:ClearAllChildren()
+brainrotSpawnsFolder:ClearAllChildren()
+zonesFolder:ClearAllChildren()
+decorationFolder:ClearAllChildren()
+
+-- Remove loose parts in Map folder except the subfolders we want to keep
+for _, child in ipairs(mapFolder:GetChildren()) do
+	if child ~= playerBasesFolder and child ~= brainrotSpawnsFolder and child ~= decorationFolder then
+		child:Destroy()
 	end
-	f = Instance.new(class or "Folder")
-	f.Name   = name
-	f.Parent = parent
-	return f
 end
 
-local function makePart(parent, name, size, cf, color, transp, mat, canCollide)
-	local p = Instance.new("Part")
-	p.Name        = name
-	p.Size        = size
-	p.CFrame      = cf
-	p.Color       = color   or Color3.new(0.7, 0.7, 0.7)
-	p.Transparency = transp  or 0
-	p.Material    = mat     or Enum.Material.SmoothPlastic
-	p.Anchored    = true
-	p.CanCollide  = (canCollide ~= false)
-	p.Parent      = parent
-	return p
+-- ── 2. LIGHTING & COLOR CORRECTION ───────────────────────────────────────────
+
+local Lighting = game:GetService("Lighting")
+Lighting.ClockTime = 14
+Lighting.Brightness = 3
+Lighting.GlobalShadows = false
+Lighting.Ambient = Color3.fromRGB(150, 150, 150)
+
+local colorCorrection = Lighting:FindFirstChildOfClass("ColorCorrectionEffect")
+if not colorCorrection then
+	colorCorrection = Instance.new("ColorCorrectionEffect", Lighting)
+end
+colorCorrection.Saturation = 0.5
+colorCorrection.Contrast = 0.15
+
+-- ── 3. MAP FLOOR & HILLS ───────────────────────────────────────────────────
+
+local baseplate = ws:FindFirstChild("Baseplate")
+if baseplate and baseplate:IsA("BasePart") then
+	baseplate.Position = Vector3.new(baseplate.Position.X, -8.5, baseplate.Position.Z)
 end
 
--- Invisible boundary part used by ZoneUtils AABB checks
-local function makeBoundary(parent, size, cf)
-	return makePart(parent, "Boundary", size, cf,
-		Color3.new(1,1,1), 1, Enum.Material.SmoothPlastic, false)
+local ground = Instance.new("Part")
+ground.Name = "Ground"
+ground.Size = Vector3.new(650, 2, 650)
+ground.Position = Vector3.new(0, -1, 0)
+ground.Material = Enum.Material.Plastic
+ground.Color = Color3.fromRGB(85, 255, 0)
+ground.TopSurface = Enum.SurfaceType.Studs
+ground.BottomSurface = Enum.SurfaceType.Smooth
+ground.Anchored = true
+ground.Parent = mapFolder
+
+-- Generate Blocky Hills
+local numHills = 36
+local hillRadius = 290
+for i = 1, numHills do
+	local angle = i * (2 * math.pi / numHills)
+	local hx = hillRadius * math.cos(angle)
+	local hz = hillRadius * math.sin(angle)
+	
+	local height = 20 + math.random() * 30
+	local width = 45 + math.random() * 10
+	local depth = 40 + math.random() * 10
+	
+	-- Base (Brown)
+	local hillBase = Instance.new("Part")
+	hillBase.Name = "HillBase"
+	hillBase.Size = Vector3.new(width, height, depth)
+	hillBase.Position = Vector3.new(hx, height/2 - 1, hz)
+	hillBase.CFrame = CFrame.new(hillBase.Position) * CFrame.Angles(0, -angle + math.pi/2, 0)
+	hillBase.Color = Color3.fromRGB(100, 60, 30)
+	hillBase.Material = Enum.Material.Plastic
+	hillBase.TopSurface = Enum.SurfaceType.Smooth
+	hillBase.Anchored = true
+	hillBase.Parent = decorationFolder
+	
+	-- Top (Green)
+	local hillTop = Instance.new("Part")
+	hillTop.Name = "HillTop"
+	hillTop.Size = Vector3.new(width + 2, 4, depth + 2)
+	hillTop.Position = hillBase.Position + Vector3.new(0, height/2 + 2, 0)
+	hillTop.CFrame = CFrame.new(hillTop.Position) * CFrame.Angles(0, -angle + math.pi/2, 0)
+	hillTop.Color = Color3.fromRGB(70, 200, 40)
+	hillTop.Material = Enum.Material.Plastic
+	hillTop.TopSurface = Enum.SurfaceType.Studs
+	hillTop.Anchored = true
+	hillTop.Parent = decorationFolder
 end
 
--- ── folder structure ─────────────────────────────────────────────────────
+-- ── 4. SAFEZONE & SHOPS (Half Size) ────────────────────────────────────────
 
-local map = getOrCreate(ws, "Map")
+local safeZoneSize = 50 -- Reduced to half
+local safeZone = Instance.new("Part")
+safeZone.Name = "SafeZone"
+safeZone.Size = Vector3.new(safeZoneSize, 0.5, safeZoneSize)
+safeZone.Position = Vector3.new(0, 0.25, 0)
+safeZone.Color = Color3.fromRGB(100, 240, 100)
+safeZone.Material = Enum.Material.Plastic
+safeZone.TopSurface = Enum.SurfaceType.Studs
+safeZone.Anchored = true
+safeZone.CanCollide = false
+safeZone.Parent = zonesFolder
 
-local playerBases    = getOrCreate(map, "PlayerBases")
-local spawnPts       = getOrCreate(map, "SpawnPoints")
-local brainrotSpawns = getOrCreate(map, "BrainrotSpawns")
-local safeZone       = getOrCreate(map, "SafeZone")
-local dangerZone     = getOrCreate(map, "DangerZone")
-local tradingZone    = getOrCreate(map, "TradingZone")
-local miniPitch      = getOrCreate(map, "MiniPitch")
+local function buildShopBoard(name, position, rotation, guiTitle, bgColor)
+	local shopFolder = Instance.new("Folder")
+	shopFolder.Name = name
+	shopFolder.Parent = zonesFolder
+	
+	local C = position
 
--- ── GROUND ───────────────────────────────────────────────────────────────
+	local counter = Instance.new("Part")
+	counter.Name = "Counter"
+	counter.Size = Vector3.new(10, 3, 3)
+	counter.Position = C + Vector3.new(0, 1.5, 0)
+	counter.CFrame = CFrame.new(counter.Position) * CFrame.Angles(0, rotation, 0)
+	counter.Color = Color3.fromRGB(130, 70, 30)
+	counter.Material = Enum.Material.Wood
+	counter.TopSurface = Enum.SurfaceType.Studs
+	counter.Anchored = true
+	counter.Parent = shopFolder
+	
+	for _, dx in ipairs({-4, 4}) do
+		local post = Instance.new("Part")
+		post.Name = "Post"
+		post.Size = Vector3.new(1, 12, 1)
+		local offset = CFrame.Angles(0, rotation, 0) * Vector3.new(dx, 6, -2)
+		post.Position = C + offset
+		post.CFrame = CFrame.new(post.Position) * CFrame.Angles(0, rotation, 0)
+		post.Color = Color3.fromRGB(100, 50, 20)
+		post.Material = Enum.Material.Wood
+		post.Anchored = true
+		post.Parent = shopFolder
+	end
 
-makePart(map, "Ground",
-	Vector3.new(390, 2, 390),
-	CFrame.new(0, -1, 0),
-	Color3.fromRGB(108, 156, 88), 0, Enum.Material.Grass)
+	local board = Instance.new("Part")
+	board.Name = "Board"
+	board.Size = Vector3.new(12, 8, 1)
+	local boardOffset = CFrame.Angles(0, rotation, 0) * Vector3.new(0, 8, -1.5)
+	board.Position = C + boardOffset
+	board.CFrame = CFrame.new(board.Position) * CFrame.Angles(0, rotation, 0)
+	board.Color = Color3.fromRGB(255, 200, 100)
+	board.Material = Enum.Material.Wood
+	board.Anchored = true
+	board.Parent = shopFolder
 
--- ── DANGER ZONE (covers everything — lowest priority in ZoneUtils) ────────
+	local sGui = Instance.new("SurfaceGui")
+	sGui.Face = Enum.NormalId.Front
+	sGui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	sGui.PixelsPerStud = 50
+	sGui.Parent = board
 
--- Large AABB boundary
-makeBoundary(dangerZone,
-	Vector3.new(390, 40, 390),
-	CFrame.new(0, 20, 0))
+	local frame = Instance.new("Frame")
+	frame.Size = UDim2.fromScale(1, 1)
+	frame.BackgroundColor3 = bgColor
+	frame.BorderSizePixel = 4
+	frame.BorderColor3 = Color3.new(0,0,0)
+	frame.Parent = sGui
 
--- Faint red floor tint so it's visible in Studio
-makePart(dangerZone, "Tint",
-	Vector3.new(390, 0.3, 390),
-	CFrame.new(0, 0.15, 0),
-	Color3.fromRGB(220, 50, 50), 0.82, Enum.Material.Neon, false)
+	local uiCorner = Instance.new("UICorner")
+	uiCorner.CornerRadius = UDim.new(0.05, 0)
+	uiCorner.Parent = frame
 
--- ── SAFE ZONE (center, 80 × 80) ──────────────────────────────────────────
+	local title = Instance.new("TextLabel")
+	title.Size = UDim2.fromScale(1, 0.4)
+	title.Position = UDim2.fromScale(0, 0.1)
+	title.BackgroundTransparency = 1
+	title.Text = guiTitle
+	title.TextScaled = true
+	title.Font = Enum.Font.FredokaOne
+	title.TextColor3 = Color3.new(1,1,1)
+	title.TextStrokeTransparency = 0
+	title.Parent = frame
 
-makeBoundary(safeZone, Vector3.new(80, 24, 80), CFrame.new(0, 12, 0))
+	local subTitle = Instance.new("TextLabel")
+	subTitle.Size = UDim2.fromScale(0.8, 0.3)
+	subTitle.Position = UDim2.fromScale(0.1, 0.6)
+	subTitle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	subTitle.Text = "Interactuar"
+	subTitle.TextScaled = true
+	subTitle.Font = Enum.Font.GothamBlack
+	subTitle.TextColor3 = Color3.new(0,0,0)
+	subTitle.Parent = frame
+	local subCorner = Instance.new("UICorner")
+	subCorner.CornerRadius = UDim.new(0.2, 0)
+	subCorner.Parent = subTitle
 
-makePart(safeZone, "Floor",
-	Vector3.new(80, 0.5, 80),
-	CFrame.new(0, 0.25, 0),
-	Color3.fromRGB(60, 130, 220), 0.4, Enum.Material.Neon, false)
+	local dealerOffset = CFrame.Angles(0, rotation, 0) * Vector3.new(0, 2.5, -1)
+	local dealer = Instance.new("Part")
+	dealer.Name = "Dealer"
+	dealer.Size = Vector3.new(2, 4, 2)
+	dealer.Position = C + dealerOffset
+	dealer.CFrame = CFrame.new(dealer.Position) * CFrame.Angles(0, rotation, 0)
+	dealer.Color = Color3.fromRGB(255, 255, 0)
+	dealer.Material = Enum.Material.Plastic
+	dealer.Anchored = true
+	dealer.Parent = shopFolder
 
--- Album/safe stand in the middle
-makePart(safeZone, "AlbumStand",
-	Vector3.new(9, 1.3, 9),
-	CFrame.new(0, 1.15, 0),
-	Color3.fromRGB(200, 170, 80), 0, Enum.Material.SmoothPlastic)
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.Name = "ShopPrompt"
+	prompt.ActionText = "Abrir"
+	prompt.ObjectText = name
+	prompt.Parent = dealer
+end
 
--- Low fence around SafeZone (4 sides, decorative)
-local szFences = {
-	{ Vector3.new(81, 2.5, 0.4), CFrame.new(0, 1.25,  40.2) },
-	{ Vector3.new(81, 2.5, 0.4), CFrame.new(0, 1.25, -40.2) },
-	{ Vector3.new(0.4, 2.5, 81), CFrame.new( 40.2, 1.25, 0) },
-	{ Vector3.new(0.4, 2.5, 81), CFrame.new(-40.2, 1.25, 0) },
+-- Adjusted shop positions for the smaller 50x50 SafeZone
+buildShopBoard("TiendaSemillas", Vector3.new(-12, 0, 0), math.rad(45), "ROLLOS\n$2,000", Color3.fromRGB(255, 0, 100))
+buildShopBoard("ExpandirGranja", Vector3.new(12, 0, 0), math.rad(-45), "EXPANDIR\n$8,000", Color3.fromRGB(150, 0, 255))
+buildShopBoard("Recompensas", Vector3.new(0, 0, -15), math.rad(0), "RECOMPENSAS", Color3.fromRGB(255, 150, 0))
+
+-- ── 5. WOODEN FENCES (SafeZone Perimeter with gaps) ─────────────────────────
+
+local function isNearPath(pos)
+	-- Check if a given position is too close to any of the 10 radial paths
+	for i = 1, 10 do
+		local angle = (i - 1) * (2 * math.pi / 10)
+		local basePos = Vector3.new(130 * math.cos(angle), 0, 130 * math.sin(angle))
+		
+		-- Simple radial check
+		local posAngle = math.atan2(pos.Z, pos.X)
+		if posAngle < 0 then posAngle = posAngle + 2 * math.pi end
+		
+		local pAngle = math.atan2(basePos.Z, basePos.X)
+		if pAngle < 0 then pAngle = pAngle + 2 * math.pi end
+		
+		local diff = math.abs(posAngle - pAngle)
+		if diff > math.pi then diff = 2 * math.pi - diff end
+		
+		-- If within ~12 degrees of a path, don't build a fence here
+		if diff < math.rad(12) then
+			return true
+		end
+	end
+	return false
+end
+
+local edgeRadius = safeZoneSize / 2
+for edge = 1, 4 do
+	-- Step by 5 studs along the edge
+	for t = -edgeRadius, edgeRadius, 5 do
+		local pos
+		local isX = false
+		if edge == 1 then pos = Vector3.new(t, 0, edgeRadius); isX = true -- Top
+		elseif edge == 2 then pos = Vector3.new(t, 0, -edgeRadius); isX = true -- Bottom
+		elseif edge == 3 then pos = Vector3.new(edgeRadius, 0, t) -- Right
+		elseif edge == 4 then pos = Vector3.new(-edgeRadius, 0, t) -- Left
+		end
+		
+		if not isNearPath(pos) then
+			-- Post
+			local post = Instance.new("Part")
+			post.Size = Vector3.new(1.5, 3, 1.5)
+			post.Position = pos + Vector3.new(0, 1.5, 0)
+			post.Color = Color3.fromRGB(120, 70, 40)
+			post.Material = Enum.Material.Wood
+			post.TopSurface = Enum.SurfaceType.Studs
+			post.Anchored = true
+			post.Parent = decorationFolder
+			
+			-- Rail
+			if t < edgeRadius then
+				local rail = Instance.new("Part")
+				rail.Size = isX and Vector3.new(5, 0.5, 0.5) or Vector3.new(0.5, 0.5, 5)
+				local railOffset = isX and Vector3.new(2.5, 0, 0) or Vector3.new(0, 0, 2.5)
+				rail.Position = pos + railOffset + Vector3.new(0, 2, 0)
+				
+				-- Ensure rail doesn't cross into a path zone
+				if not isNearPath(pos + railOffset) then
+					rail.Color = Color3.fromRGB(120, 70, 40)
+					rail.Material = Enum.Material.Wood
+					rail.Anchored = true
+					rail.Parent = decorationFolder
+				end
+			end
+		end
+	end
+end
+
+
+-- ── 6. TREES & LAMPS SYSTEM ────────────────────────────────────────────────
+
+local function createBlockyTree(pos)
+	local treeModel = Instance.new("Model")
+	treeModel.Name = "Tree"
+	treeModel.Parent = decorationFolder
+
+	local trunkHeight = 6 + math.random(0, 4)
+	local trunk = Instance.new("Part")
+	trunk.Name = "Trunk"
+	trunk.Size = Vector3.new(3, trunkHeight, 3)
+	trunk.Position = Vector3.new(pos.X, trunkHeight/2, pos.Z)
+	trunk.Color = Color3.fromRGB(120, 80, 50)
+	trunk.Material = Enum.Material.Wood
+	trunk.TopSurface = Enum.SurfaceType.Studs
+	trunk.Anchored = true
+	trunk.Parent = treeModel
+
+	local leafSize = 8 + math.random(0, 2)
+	local leaves = Instance.new("Part")
+	leaves.Name = "Leaves"
+	leaves.Size = Vector3.new(leafSize, leafSize-2, leafSize)
+	leaves.Position = Vector3.new(pos.X, trunkHeight + (leafSize-2)/2 - 1, pos.Z)
+	leaves.Color = Color3.fromRGB(50, 200, 50)
+	leaves.Material = Enum.Material.Plastic
+	leaves.TopSurface = Enum.SurfaceType.Studs
+	leaves.BottomSurface = Enum.SurfaceType.Studs
+	leaves.Anchored = true
+	leaves.Parent = treeModel
+	
+	local leafTopSize = leafSize - 3
+	local leavesTop = Instance.new("Part")
+	leavesTop.Name = "LeavesTop"
+	leavesTop.Size = Vector3.new(leafTopSize, 3, leafTopSize)
+	leavesTop.Position = leaves.Position + Vector3.new(0, (leafSize-2)/2 + 1.5, 0)
+	leavesTop.Color = Color3.fromRGB(50, 200, 50)
+	leavesTop.Material = Enum.Material.Plastic
+	leavesTop.TopSurface = Enum.SurfaceType.Studs
+	leavesTop.Anchored = true
+	leavesTop.Parent = treeModel
+end
+
+local function createBlockyLamp(pos)
+	local model = Instance.new("Model")
+	model.Name = "Lamp"
+	model.Parent = decorationFolder
+	
+	local post = Instance.new("Part")
+	post.Size = Vector3.new(1.5, 10, 1.5)
+	post.Position = pos + Vector3.new(0, 5, 0)
+	post.Color = Color3.fromRGB(100, 50, 20)
+	post.Material = Enum.Material.Wood
+	post.Anchored = true
+	post.Parent = model
+	
+	local top = Instance.new("Part")
+	top.Size = Vector3.new(2.5, 2.5, 2.5)
+	top.Position = pos + Vector3.new(0, 10.5, 0)
+	top.Color = Color3.fromRGB(255, 255, 150)
+	top.Material = Enum.Material.Neon
+	top.Anchored = true
+	top.Parent = model
+	
+	local light = Instance.new("PointLight")
+	light.Color = Color3.fromRGB(255, 255, 200)
+	light.Range = 25
+	light.Brightness = 0.5 -- REDUCIDO COMO PEDISTE
+	light.Parent = top
+end
+
+-- Trees behind the bases (Circle at radius 170)
+for i = 1, 40 do
+	local angle = i * (2 * math.pi / 40)
+	local r = 240 + math.random(-8, 8)
+	local pos = Vector3.new(r * math.cos(angle), 0, r * math.sin(angle))
+	createBlockyTree(pos)
+end
+
+-- Trees in the center Safe Zone corners
+for _, pos in ipairs({Vector3.new(18,0,18), Vector3.new(-18,0,18), Vector3.new(18,0,-18), Vector3.new(-18,0,-18)}) do
+	createBlockyTree(pos)
+end
+
+
+-- ── 7. 10 PLAYER BASES (Open Plots) ─────────────────────────────────────────
+
+local baseColors = {
+	Color3.fromRGB(200, 40, 40),
+	Color3.fromRGB(40, 200, 40),
+	Color3.fromRGB(40, 80, 200),
+	Color3.fromRGB(200, 40, 200),
+	Color3.fromRGB(200, 100, 40),
+	Color3.fromRGB(200, 200, 40),
+	Color3.fromRGB(40, 200, 200),
+	Color3.fromRGB(100, 40, 200),
+	Color3.fromRGB(210, 210, 210),
+	Color3.fromRGB(210, 120, 160)
 }
-for _, f in ipairs(szFences) do
-	makePart(safeZone, "Fence", f[1], f[2],
-		Color3.fromRGB(60, 110, 190), 0, Enum.Material.SmoothPlastic)
+
+local function createPath(A, B)
+	local center = (A + B) / 2
+	local dist = (B - A).Magnitude
+	local path = Instance.new("Part")
+	path.Name = "Pathway"
+	path.Size = Vector3.new(12, 0.2, dist)
+	path.CFrame = CFrame.lookAt(Vector3.new(center.X, 0.1, center.Z), Vector3.new(B.X, 0.1, B.Z))
+	path.Color = Color3.fromRGB(200, 140, 80)
+	path.Material = Enum.Material.Plastic
+	path.TopSurface = Enum.SurfaceType.Studs
+	path.Anchored = true
+	path.CanCollide = false
+	path.Parent = decorationFolder
+	return path
 end
 
--- ── TRADING ZONE (60 × 60, northeast of center) ──────────────────────────
--- Center at (95, 0, 40) — clear of SafeZone (which ends at ±40)
+for i = 1, 10 do
+	local baseFolder = Instance.new("Folder")
+	baseFolder.Name = "Base_" .. i
+	baseFolder.Parent = playerBasesFolder
 
-local TX, TZ = 95, 40
+	local angle = (i - 1) * (2 * math.pi / 10)
+	local radius = 180
+	local basePos = Vector3.new(radius * math.cos(angle), 0, radius * math.sin(angle))
+	
+	local lookAwayTarget = basePos + Vector3.new(math.cos(angle), 0, math.sin(angle))
+	local baseCFrame = CFrame.lookAt(basePos, lookAwayTarget)
 
-makeBoundary(tradingZone, Vector3.new(60, 24, 60), CFrame.new(TX, 12, TZ))
+	local plotSize = 50
+	local plot = Instance.new("Part")
+	plot.Name = "Plot"
+	plot.Size = Vector3.new(plotSize, 0.5, plotSize)
+	plot.CFrame = baseCFrame * CFrame.new(0, 0.35, 0)
+	plot.Color = baseColors[i]
+	plot.Material = Enum.Material.Plastic
+	plot.TopSurface = Enum.SurfaceType.Studs
+	plot.Anchored = true
+	plot.Parent = baseFolder
 
-makePart(tradingZone, "Floor",
-	Vector3.new(60, 0.5, 60),
-	CFrame.new(TX, 0.25, TZ),
-	Color3.fromRGB(55, 190, 90), 0.4, Enum.Material.Neon, false)
+	local borderThickness = 1.5
+	local offsets = {
+		{CFrame.new(0, 0.6, -plotSize/2), Vector3.new(plotSize, 1, borderThickness)}, 
+		{CFrame.new(0, 0.6, plotSize/2), Vector3.new(plotSize/2 - 4, 1, borderThickness), true}, 
+		{CFrame.new(-plotSize/2, 0.6, 0), Vector3.new(borderThickness, 1, plotSize)}, 
+		{CFrame.new(plotSize/2, 0.6, 0), Vector3.new(borderThickness, 1, plotSize)} 
+	}
+	
+	for idx, data in ipairs(offsets) do
+		if data[3] then
+			local p1 = Instance.new("Part")
+			p1.Size = data[2]
+			p1.CFrame = baseCFrame * CFrame.new(plotSize/4 + 2, 0.6, plotSize/2)
+			p1.Color = baseColors[i]
+			p1.Material = Enum.Material.SmoothPlastic
+			p1.Anchored = true
+			p1.Parent = baseFolder
+			
+			local p2 = Instance.new("Part")
+			p2.Size = data[2]
+			p2.CFrame = baseCFrame * CFrame.new(-plotSize/4 - 2, 0.6, plotSize/2)
+			p2.Color = baseColors[i]
+			p2.Material = Enum.Material.SmoothPlastic
+			p2.Anchored = true
+			p2.Parent = baseFolder
+		else
+			local p = Instance.new("Part")
+			p.Size = data[2]
+			p.CFrame = baseCFrame * data[1]
+			p.Color = baseColors[i]
+			p.Material = Enum.Material.SmoothPlastic
+			p.Anchored = true
+			p.Parent = baseFolder
+		end
+	end
 
--- 3 market stalls
-for i = -1, 1 do
-	makePart(tradingZone, "StallBody",
-		Vector3.new(6, 3, 4),
-		CFrame.new(TX + i*16, 1.5, TZ),
-		Color3.fromRGB(200, 160, 60), 0, Enum.Material.Wood)
-	makePart(tradingZone, "StallRoof",
-		Vector3.new(7, 0.3, 5),
-		CFrame.new(TX + i*16, 3.15, TZ),
-		Color3.fromRGB(180, 80, 30), 0, Enum.Material.SmoothPlastic)
-	makePart(tradingZone, "Counter",
-		Vector3.new(5, 0.5, 1.5),
-		CFrame.new(TX + i*16, 1.25, TZ + 1.8),
-		Color3.fromRGB(160, 120, 50), 0, Enum.Material.Wood)
+	local album = Instance.new("Part")
+	album.Name = "Album"
+	album.Size = Vector3.new(20, 14, 1)
+	album.CFrame = baseCFrame * CFrame.new(0, 7, -plotSize/2 + 2)
+	album.Color = Color3.fromRGB(150, 100, 50)
+	album.Material = Enum.Material.Wood
+	album.TopSurface = Enum.SurfaceType.Studs
+	album.Anchored = true
+	album.Parent = baseFolder
+	
+	local albumBoard = Instance.new("Part")
+	albumBoard.Name = "AlbumBoard"
+	albumBoard.Size = Vector3.new(18, 12, 1.2)
+	albumBoard.CFrame = baseCFrame * CFrame.new(0, 7, -plotSize/2 + 2)
+	albumBoard.Color = Color3.fromRGB(30, 30, 40)
+	albumBoard.Material = Enum.Material.Plastic
+	albumBoard.Anchored = true
+	albumBoard.Parent = baseFolder
+
+	local spawnLoc = Instance.new("SpawnLocation")
+	spawnLoc.Name = "SpawnLocation"
+	spawnLoc.Size = Vector3.new(6, 0.5, 6)
+	spawnLoc.CFrame = baseCFrame * CFrame.new(0, 0.6, 0)
+	spawnLoc.Color = baseColors[i]
+	spawnLoc.Material = Enum.Material.Plastic
+	spawnLoc.TopSurface = Enum.SurfaceType.Studs
+	spawnLoc.Anchored = true
+	spawnLoc.Neutral = true
+	spawnLoc.Parent = baseFolder
+
+	local doorPos = (baseCFrame * CFrame.new(0, 0.1, plotSize/2)).Position
+	
+	-- Intersection with SafeZone square
+	local dir = doorPos.Unit
+	local safeZoneEdge = dir * (safeZoneSize/2)
+	-- To make it hit the square perfectly:
+	local scale = (safeZoneSize/2) / math.max(math.abs(dir.X), math.abs(dir.Z))
+	safeZoneEdge = dir * scale
+	
+	local targetEntry = Vector3.new(safeZoneEdge.X, 0.1, safeZoneEdge.Z)
+	
+	createPath(doorPos, targetEntry)
+
+	-- Lamps along the path
+	local pathDir = (targetEntry - doorPos).Unit
+	local perp = Vector3.new(-pathDir.Z, 0, pathDir.X)
+
+	local lampFractions = {0.3, 0.7}
+	for lIndex, lf in ipairs(lampFractions) do
+		local sideOffset = (lIndex % 2 == 0) and 8 or -8
+		local lampPos = doorPos:Lerp(targetEntry, lf) + perp * sideOffset
+		createBlockyLamp(lampPos)
+	end
 end
 
--- ── MINI PITCH (100 × 58, northwest of center) ───────────────────────────
--- Center at (-80, 0, 50) — clear of SafeZone
+for r = 1, 40 do
+	local dist = 60 + math.random() * 100
+	local angle = math.random() * 2 * math.pi
+	local spawnPos = Vector3.new(dist * math.cos(angle), 2, dist * math.sin(angle))
 
-local PX, PZ = -80, 50
-
-makeBoundary(miniPitch, Vector3.new(100, 24, 58), CFrame.new(PX, 12, PZ))
-
--- Grass
-makePart(miniPitch, "Grass",
-	Vector3.new(100, 0.5, 58),
-	CFrame.new(PX, 0.25, PZ),
-	Color3.fromRGB(80, 160, 50), 0, Enum.Material.Grass)
-
--- Field lines
-makePart(miniPitch, "CenterLine",
-	Vector3.new(0.7, 0.6, 58),
-	CFrame.new(PX, 0.55, PZ),
-	Color3.new(1,1,1), 0)
-
-makePart(miniPitch, "CenterCircle",
-	Vector3.new(20, 0.6, 20),
-	CFrame.new(PX, 0.55, PZ),
-	Color3.new(1,1,1), 0.65, Enum.Material.Neon, false)
-
--- Goals (east and west ends)
-for _, side in ipairs({-1, 1}) do
-	-- post
-	makePart(miniPitch, "GoalPost",
-		Vector3.new(0.5, 4, 10),
-		CFrame.new(PX + side*49.75, 2.25, PZ),
-		Color3.new(1,1,1))
-	-- crossbar
-	makePart(miniPitch, "Crossbar",
-		Vector3.new(0.5, 0.5, 10),
-		CFrame.new(PX + side*49.75, 4.5, PZ),
-		Color3.new(1,1,1))
+	local spawnPart = Instance.new("Part")
+	spawnPart.Name = "BrainrotSpawn"
+	spawnPart.Size = Vector3.new(2, 2, 2)
+	spawnPart.Position = spawnPos
+	spawnPart.CFrame = CFrame.new(spawnPos) * CFrame.Angles(0, math.random() * math.pi, 0)
+	spawnPart.Color = Color3.fromRGB(255, 200, 0)
+	spawnPart.Material = Enum.Material.Neon
+	spawnPart.TopSurface = Enum.SurfaceType.Studs
+	spawnPart.Transparency = 1
+	spawnPart.CanCollide = false
+	spawnPart.Anchored = true
+	spawnPart.Parent = brainrotSpawnsFolder
 end
 
--- Ball (unanchored so it rolls during play)
-local ball = makePart(miniPitch, "Ball",
-	Vector3.new(2, 2, 2),
-	CFrame.new(PX, 2, PZ),
-	Color3.new(1,1,1), 0)
-ball.Shape    = Enum.PartType.Ball
-ball.Anchored = false
-
--- ── PLAYER BASES (15 in ring, radius 140) ────────────────────────────────
-
-local BASE_COUNT  = 15
-local RING_RADIUS = 140   -- reduced from 255
-local BASE_W      = 18    -- plot side length
-local WALL_H      = 4     -- house wall height
-local WALL_CLR    = Color3.fromRGB(210, 200, 185)
-local ROOF_CLR    = Color3.fromRGB(185, 80, 40)
-
-for i = 1, BASE_COUNT do
-	local angle = (i - 1) * (2 * math.pi / BASE_COUNT)
-	local bx    = math.floor(RING_RADIUS * math.cos(angle) + 0.5)
-	local bz    = math.floor(RING_RADIUS * math.sin(angle) + 0.5)
-
-	local folder     = Instance.new("Folder")
-	folder.Name      = "Base_" .. i
-	folder.Parent    = playerBases
-
-	-- Grass plot
-	makePart(folder, "Plot",
-		Vector3.new(BASE_W, 0.5, BASE_W),
-		CFrame.new(bx, 0.25, bz),
-		Color3.fromRGB(100, 180, 70), 0, Enum.Material.Grass)
-
-	-- BOUNDARY (larger than plot, tall enough for AABB detection)
-	makeBoundary(folder,
-		Vector3.new(BASE_W + 2, 16, BASE_W + 2),
-		CFrame.new(bx, 8, bz))
-
-	-- 4 walls (axis-aligned)
-	makePart(folder, "WallFront",
-		Vector3.new(BASE_W, WALL_H, 0.5),
-		CFrame.new(bx, WALL_H/2, bz + BASE_W/2),
-		WALL_CLR)
-	makePart(folder, "WallBack",
-		Vector3.new(BASE_W, WALL_H, 0.5),
-		CFrame.new(bx, WALL_H/2, bz - BASE_W/2),
-		WALL_CLR)
-	makePart(folder, "WallLeft",
-		Vector3.new(0.5, WALL_H, BASE_W),
-		CFrame.new(bx + BASE_W/2, WALL_H/2, bz),
-		WALL_CLR)
-	makePart(folder, "WallRight",
-		Vector3.new(0.5, WALL_H, BASE_W),
-		CFrame.new(bx - BASE_W/2, WALL_H/2, bz),
-		WALL_CLR)
-
-	-- Roof
-	makePart(folder, "Roof",
-		Vector3.new(BASE_W + 1, 0.5, BASE_W + 1),
-		CFrame.new(bx, WALL_H + 0.25, bz),
-		ROOF_CLR)
-
-	-- Number sign (front wall, visible in Studio)
-	local sign = Instance.new("Part")
-	sign.Name     = "Sign"
-	sign.Size     = Vector3.new(2.6, 1.8, 0.2)
-	sign.CFrame   = CFrame.new(bx, WALL_H - 0.6, bz + BASE_W/2 + 0.15)
-	sign.Anchored = true
-	sign.CanCollide = false
-	sign.Color    = Color3.fromRGB(255, 220, 0)
-	sign.Parent   = folder
-
-	local sg = Instance.new("SurfaceGui")
-	sg.Face   = Enum.NormalId.Front
-	sg.Parent = sign
-
-	local lb = Instance.new("TextLabel")
-	lb.Size                 = UDim2.fromScale(1, 1)
-	lb.BackgroundTransparency = 1
-	lb.Text                 = tostring(i)
-	lb.TextScaled           = true
-	lb.Font                 = Enum.Font.GothamBold
-	lb.TextColor3           = Color3.new(0, 0, 0)
-	lb.Parent               = sg
-
-	-- SpawnLocation inside the base (used by default Roblox spawn system)
-	local sp               = Instance.new("SpawnLocation")
-	sp.Name                = "Spawn_" .. i
-	sp.Size                = Vector3.new(4, 0.4, 4)
-	sp.CFrame              = CFrame.new(bx, 0.7, bz)
-	sp.Anchored            = true
-	sp.Transparency        = 0.85
-	sp.Color               = Color3.fromRGB(60, 140, 255)
-	sp.AllowTeamChangeOnTouch = false
-	sp.TeamColor           = BrickColor.new("Medium stone grey")
-	sp.Parent              = spawnPts
-end
-
--- ── BRAINROT SPAWN POINTS (20 pts scattered in middle ring) ───────────────
--- Distributed between radius 65–100, inside the base ring (140)
-
-local SPAWN_RADII = { 68, 78, 88, 97, 72 }  -- cycling
-
-for i = 1, 20 do
-	local angle  = (i - 1) * (2 * math.pi / 20) + math.pi / 20
-	local radius = SPAWN_RADII[((i-1) % 5) + 1]
-	local sx     = math.floor(radius * math.cos(angle) + 0.5)
-	local sz     = math.floor(radius * math.sin(angle) + 0.5)
-
-	makePart(brainrotSpawns, "Spawn_" .. i,
-		Vector3.new(3, 0.5, 3),
-		CFrame.new(sx, 0.75, sz),
-		Color3.fromRGB(255, 140, 0), 0.35, Enum.Material.Neon, false)
-end
-
--- ── DEFAULT SPAWN (center, for unassigned / overflow players) ─────────────
-
-local defSpawn               = Instance.new("SpawnLocation")
-defSpawn.Name                = "DefaultSpawn"
-defSpawn.Size                = Vector3.new(8, 1, 8)
-defSpawn.CFrame              = CFrame.new(0, 1, 0)
-defSpawn.Anchored            = true
-defSpawn.Transparency        = 0.75
-defSpawn.Color               = Color3.fromRGB(80, 140, 220)
-defSpawn.AllowTeamChangeOnTouch = false
-defSpawn.Parent              = spawnPts
-
--- ── DONE ─────────────────────────────────────────────────────────────────
-
-print(string.format(
-	"[MapBuilder] Listo! Bases: %d | BrainrotSpawns: 20 | Radio del anillo: %d studs",
-	BASE_COUNT, RING_RADIUS
-))
+print("SUCCESS: Map generated with fences, reduced lamps, and repositioned trees!")

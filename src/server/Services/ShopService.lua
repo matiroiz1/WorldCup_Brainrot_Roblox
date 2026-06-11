@@ -154,6 +154,38 @@ local function onRequestPurchase(player: Player, itemType: string, _itemId: any)
         local newData = PDS.getData(player)
         Remotes.CoinsUpdated:FireClient(player, newData.coins)
         Remotes.PurchaseResult:FireClient(player, { success = true, type = "slot_storage" })
+
+    elseif itemType == "weapon" then
+        local weaponId = _itemId
+        local prices = Economy.ToolUpgradePrices[weaponId]
+        if not prices then return end
+        
+        local cost = prices[1]
+        if data.coins < cost then
+            Remotes.PurchaseResult:FireClient(player, { success = false, reason = "insufficient_coins" })
+            return
+        end
+        
+        if player.Backpack:FindFirstChild(weaponId) or (player.Character and player.Character:FindFirstChild(weaponId)) then
+            Remotes.PurchaseResult:FireClient(player, { success = false, reason = "already_owned" })
+            return
+        end
+        
+        PDS.update(player, function(d)
+            d.coins = d.coins - cost
+        end)
+        
+        local weaponFolder = ReplicatedStorage:FindFirstChild("Assets") and ReplicatedStorage.Assets:FindFirstChild("Weapons")
+        if weaponFolder then
+            local tool = weaponFolder:FindFirstChild(weaponId)
+            if tool then
+                tool:Clone().Parent = player.Backpack
+                tool:Clone().Parent = player.StarterGear
+            end
+        end
+        
+        Remotes.CoinsUpdated:FireClient(player, PDS.getData(player).coins)
+        Remotes.PurchaseResult:FireClient(player, { success = true, type = "weapon" })
     end
 end
 
