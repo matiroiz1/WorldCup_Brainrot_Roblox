@@ -20,7 +20,12 @@ local RARITY_COLORS = {
 
 local currentInventoryData: any = nil
 local currentAlbumData: any     = nil
-local activeScreen: string?     = nil   -- "inventory" | "album" | nil
+local activeScreen: string?     = nil   -- "inventory" | "album" | "album_viewer" | nil
+
+local viewerTargetBaseId: string? = nil
+local viewerVictimName: string?   = nil
+local activeConfirmConnection: RBXScriptConnection? = nil
+local activeBoostConnection: RBXScriptConnection?   = nil
 
 local InventoryController = {}
 
@@ -34,10 +39,11 @@ invGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 invGui.Parent         = PlayerGui
 
 -- Background overlay
-local invOverlay = Instance.new("Frame")
+local invOverlay = Instance.new("TextButton")
 invOverlay.Size              = UDim2.fromScale(1, 1)
 invOverlay.BackgroundColor3  = Color3.fromRGB(0, 0, 0)
 invOverlay.BackgroundTransparency = 0.5
+invOverlay.Text              = ""
 invOverlay.Parent            = invGui
 
 -- Main panel
@@ -117,10 +123,11 @@ albGui.Enabled        = false
 albGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 albGui.Parent         = PlayerGui
 
-local albOverlay = Instance.new("Frame")
+local albOverlay = Instance.new("TextButton")
 albOverlay.Size              = UDim2.fromScale(1, 1)
 albOverlay.BackgroundColor3  = Color3.fromRGB(0, 0, 0)
 albOverlay.BackgroundTransparency = 0.5
+albOverlay.Text              = ""
 albOverlay.Parent            = albGui
 
 local albPanel = Instance.new("Frame")
@@ -162,6 +169,64 @@ albProgress.TextColor3        = Color3.fromRGB(160, 220, 160)
 albProgress.TextScaled        = true
 albProgress.Font              = Enum.Font.Gotham
 albProgress.Parent            = albPanel
+
+-- Confirm PopUp dialog
+local confirmFrame = Instance.new("Frame")
+confirmFrame.Name = "ConfirmPopup"
+confirmFrame.Size = UDim2.new(0.8, 0, 0.45, 0)
+confirmFrame.Position = UDim2.new(0.1, 0, 0.28, 0)
+confirmFrame.BackgroundColor3 = Color3.fromRGB(24, 24, 37)
+confirmFrame.BorderSizePixel = 0
+confirmFrame.Visible = false
+confirmFrame.ZIndex = 10
+confirmFrame.Parent = albPanel
+Instance.new("UICorner", confirmFrame).CornerRadius = UDim.new(0, 12)
+
+local confirmTitle = Instance.new("TextLabel")
+confirmTitle.Size = UDim2.new(1, 0, 0.35, 0)
+confirmTitle.BackgroundTransparency = 1
+confirmTitle.Text = "¿Robar esta carta?"
+confirmTitle.TextColor3 = Color3.new(1, 1, 1)
+confirmTitle.TextScaled = true
+confirmTitle.Font = Enum.Font.GothamBold
+confirmTitle.Parent = confirmFrame
+
+local confirmBtnNormal = Instance.new("TextButton")
+confirmBtnNormal.Size = UDim2.new(0.42, 0, 0.22, 0)
+confirmBtnNormal.Position = UDim2.new(0.06, 0, 0.42, 0)
+confirmBtnNormal.BackgroundColor3 = Color3.fromRGB(40, 120, 60)
+confirmBtnNormal.Text = "Normal (10s)"
+confirmBtnNormal.TextColor3 = Color3.new(1, 1, 1)
+confirmBtnNormal.TextScaled = true
+confirmBtnNormal.Font = Enum.Font.GothamBold
+confirmBtnNormal.Parent = confirmFrame
+Instance.new("UICorner", confirmBtnNormal).CornerRadius = UDim.new(0, 6)
+
+local confirmBtnBoost = Instance.new("TextButton")
+confirmBtnBoost.Size = UDim2.new(0.42, 0, 0.22, 0)
+confirmBtnBoost.Position = UDim2.new(0.52, 0, 0.42, 0)
+confirmBtnBoost.BackgroundColor3 = Color3.fromRGB(180, 120, 10)
+confirmBtnBoost.Text = "Rápido (3s - 50 🪙)"
+confirmBtnBoost.TextColor3 = Color3.new(1, 1, 1)
+confirmBtnBoost.TextScaled = true
+confirmBtnBoost.Font = Enum.Font.GothamBold
+confirmBtnBoost.Parent = confirmFrame
+Instance.new("UICorner", confirmBtnBoost).CornerRadius = UDim.new(0, 6)
+
+local confirmBtnCancel = Instance.new("TextButton")
+confirmBtnCancel.Size = UDim2.new(0.9, 0, 0.18, 0)
+confirmBtnCancel.Position = UDim2.new(0.05, 0, 0.74, 0)
+confirmBtnCancel.BackgroundColor3 = Color3.fromRGB(120, 30, 30)
+confirmBtnCancel.Text = "Cancelar"
+confirmBtnCancel.TextColor3 = Color3.new(1, 1, 1)
+confirmBtnCancel.TextScaled = true
+confirmBtnCancel.Font = Enum.Font.GothamBold
+confirmBtnCancel.Parent = confirmFrame
+Instance.new("UICorner", confirmBtnCancel).CornerRadius = UDim.new(0, 6)
+
+confirmBtnCancel.MouseButton1Click:Connect(function()
+    confirmFrame.Visible = false
+end)
 
 local albGrid = Instance.new("ScrollingFrame")
 albGrid.Size                  = UDim2.new(1, -20, 1, -90)
@@ -328,6 +393,56 @@ local function makeAlbumSlot(parent, cardId: string, filled: boolean, order: num
     nameLbl.Font              = Enum.Font.GothamBold
     nameLbl.Parent            = slot
 
+    if filled then
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.fromScale(1, 1)
+        btn.BackgroundTransparency = 1
+        btn.Text = ""
+        btn.Parent = slot
+        
+        btn.MouseButton1Click:Connect(function()
+            if activeConfirmConnection then activeConfirmConnection:Disconnect() end
+            if activeBoostConnection then activeBoostConnection:Disconnect() end
+            
+            local albumKey = "wc2026_" .. cardId
+            
+            if viewerTargetBaseId == nil then
+                -- Despegar propia carta
+                confirmTitle.Text = "¿Despegar " .. (CARD_NAMES[cardId] or cardId) .. " del álbum?"
+                confirmBtnNormal.Text = "Despegar al Inventario"
+                confirmBtnNormal.BackgroundColor3 = Color3.fromRGB(40, 120, 60)
+                confirmBtnNormal.Position = UDim2.new(0.05, 0, 0.42, 0)
+                confirmBtnNormal.Size = UDim2.new(0.9, 0, 0.22, 0)
+                confirmBtnBoost.Visible = false
+                
+                activeConfirmConnection = confirmBtnNormal.MouseButton1Click:Connect(function()
+                    confirmFrame.Visible = false
+                    Remotes.DetachCardSelf:FireServer(albumKey)
+                end)
+            else
+                -- Robar carta ajena
+                confirmTitle.Text = "¿Robar " .. (CARD_NAMES[cardId] or cardId) .. " de " .. viewerVictimName .. "?"
+                confirmBtnNormal.Text = "Normal (10s)"
+                confirmBtnNormal.BackgroundColor3 = Color3.fromRGB(40, 100, 180)
+                confirmBtnNormal.Position = UDim2.new(0.06, 0, 0.42, 0)
+                confirmBtnNormal.Size = UDim2.new(0.42, 0, 0.22, 0)
+                confirmBtnBoost.Visible = true
+                
+                activeConfirmConnection = confirmBtnNormal.MouseButton1Click:Connect(function()
+                    confirmFrame.Visible = false
+                    Remotes.RequestStealAlbumCard:FireServer(viewerTargetBaseId, albumKey, false)
+                end)
+                
+                activeBoostConnection = confirmBtnBoost.MouseButton1Click:Connect(function()
+                    confirmFrame.Visible = false
+                    Remotes.RequestStealAlbumCard:FireServer(viewerTargetBaseId, albumKey, true)
+                end)
+            end
+            
+            confirmFrame.Visible = true
+        end)
+    end
+
     return slot
 end
 
@@ -390,7 +505,10 @@ end
 local function closeAll()
     invGui.Enabled = false
     albGui.Enabled = false
+    confirmFrame.Visible = false
     activeScreen   = nil
+    viewerTargetBaseId = nil
+    viewerVictimName   = nil
 end
 
 local function openInventory()
@@ -412,9 +530,151 @@ local function openAlbum()
         return
     end
     closeAll()
+    albTitle.Text = "📋 Álbum — Mundial 2026"
     renderAlbum(currentAlbumData)
     albGui.Enabled = true
     activeScreen   = "album"
+end
+
+local function openAlbumViewer(targetBaseId: string, victimName: string, albumProgress: any)
+    closeAll()
+    viewerTargetBaseId = targetBaseId
+    viewerVictimName   = victimName
+    
+    albTitle.Text = "📋 Álbum de " .. victimName
+    renderAlbum(albumProgress)
+    
+    albGui.Enabled = true
+    activeScreen   = "album_viewer"
+end
+
+local function setupPhysicalAlbums()
+    local map = workspace:WaitForChild("Map")
+    local basesFolder = map:WaitForChild("PlayerBases")
+    
+    local function setupBase(baseFolder)
+        local albumPart = baseFolder:WaitForChild("Album")
+        local albumSlots = baseFolder:WaitForChild("AlbumSlots")
+        
+        -- Find or create SurfaceGui
+        local sg = albumPart:FindFirstChild("AlbumSurface")
+        if not sg then
+            sg = Instance.new("SurfaceGui")
+            sg.Name = "AlbumSurface"
+            sg.Face = Enum.NormalId.Front
+            sg.SizingMode = Enum.SurfaceGuiSizingMode.Pixels
+            sg.CanvasSize = Vector2.new(800, 600)
+            sg.Parent = albumPart
+        end
+        
+        -- Create container frame
+        local mainFrame = sg:FindFirstChild("MainFrame")
+        if not mainFrame then
+            mainFrame = Instance.new("Frame")
+            mainFrame.Name = "MainFrame"
+            mainFrame.Size = UDim2.fromScale(1, 1)
+            mainFrame.BackgroundColor3 = Color3.fromRGB(30, 35, 45)
+            mainFrame.BorderSizePixel = 4
+            mainFrame.BorderColor3 = Color3.fromRGB(255, 215, 0)
+            mainFrame.Parent = sg
+            
+            -- Title
+            local title = Instance.new("TextLabel")
+            title.Size = UDim2.new(1, 0, 0, 60)
+            title.BackgroundTransparency = 1
+            title.Text = "ÁLBUM DE CROMOS"
+            title.TextColor3 = Color3.new(1, 1, 1)
+            title.TextSize = 28
+            title.Font = Enum.Font.GothamBold
+            title.Parent = mainFrame
+            
+            -- UIGridLayout for slots
+            local grid = Instance.new("UIGridLayout")
+            grid.CellSize = UDim2.new(0, 100, 0, 140)
+            grid.CellPadding = UDim2.new(0, 12, 0, 12)
+            grid.HorizontalAlignment = Enum.HorizontalAlignment.Center
+            grid.VerticalAlignment = Enum.VerticalAlignment.Center
+            grid.SortOrder = Enum.SortOrder.LayoutOrder
+            grid.Parent = mainFrame
+            
+            local wc2026Cards = {
+                { id = "card_common_wc2026_arg", name = "Argentina", order = 1 },
+                { id = "card_common_wc2026_bra", name = "Brasil", order = 2 },
+                { id = "card_common_wc2026_fra", name = "Francia", order = 3 },
+                { id = "card_common_wc2026_eng", name = "Inglaterra", order = 4 },
+                { id = "card_common_wc2026_esp", name = "España", order = 5 },
+                { id = "card_rare_wc2026_player_random", name = "Figura", order = 6 },
+                { id = "card_epic_wc2026_player_random", name = "Estrella", order = 7 }
+            }
+            
+            for _, info in ipairs(wc2026Cards) do
+                local slot = Instance.new("Frame")
+                slot.Name = info.id
+                slot.BackgroundColor3 = Color3.fromRGB(50, 55, 65)
+                slot.BorderSizePixel = 2
+                slot.LayoutOrder = info.order
+                slot.Parent = mainFrame
+                
+                local label = Instance.new("TextLabel")
+                label.Name = "Label"
+                label.Size = UDim2.fromScale(1, 1)
+                label.BackgroundTransparency = 1
+                label.Text = "#" .. info.order .. "\n" .. info.name
+                label.TextColor3 = Color3.fromRGB(150, 150, 150)
+                label.TextSize = 12
+                label.Font = Enum.Font.GothamMedium
+                label.Parent = slot
+            end
+        end
+        
+        local function updateSlot(val)
+            local slot = mainFrame:FindFirstChild(val.Name)
+            if slot then
+                local label = slot:FindFirstChild("Label") :: TextLabel?
+                if label then
+                    if val.Value then
+                        slot.BackgroundColor3 = Color3.fromRGB(35, 140, 65)
+                        label.TextColor3 = Color3.new(1, 1, 1)
+                        local country = val.Name:split("_")[3]:upper()
+                        label.Text = "COMPLETADO\n" .. country
+                    else
+                        slot.BackgroundColor3 = Color3.fromRGB(50, 55, 65)
+                        label.TextColor3 = Color3.fromRGB(150, 150, 150)
+                        local order = slot.LayoutOrder
+                        local names = { "ARGENTINA", "BRASIL", "FRANCIA", "INGLATERRA", "ESPAÑA", "FIGURA", "ESTRELLA" }
+                        label.Text = "#" .. order .. "\n" .. names[order]
+                    end
+                end
+            end
+        end
+        
+        for _, val in ipairs(albumSlots:GetChildren()) do
+            if val:IsA("BoolValue") then
+                updateSlot(val)
+                val.Changed:Connect(function()
+                    updateSlot(val)
+                end)
+            end
+        end
+        
+        albumSlots.ChildAdded:Connect(function(val)
+            if val:IsA("BoolValue") then
+                task.wait(0.05)
+                updateSlot(val)
+                val.Changed:Connect(function()
+                    updateSlot(val)
+                end)
+            end
+        end)
+    end
+    
+    for _, baseFolder in ipairs(basesFolder:GetChildren()) do
+        task.spawn(setupBase, baseFolder)
+    end
+    
+    basesFolder.ChildAdded:Connect(function(baseFolder)
+        task.spawn(setupBase, baseFolder)
+    end)
 end
 
 -- ── Init ──────────────────────────────────────────────────────────────
@@ -451,6 +711,34 @@ function InventoryController.OnStart()
         currentAlbumData = data.albumProgress or {}
         if activeScreen == "album" then renderAlbum(currentAlbumData) end
     end)
+
+    if Remotes:FindFirstChild("ViewAlbum") then
+        Remotes.ViewAlbum:Connect(function(targetBaseId, victimName, albumProgress)
+            openAlbumViewer(targetBaseId, victimName, albumProgress)
+        end)
+    end
+
+    local Workspace = game:GetService("Workspace")
+    Remotes.BaseAssigned:Connect(function(info)
+        local baseId = info.baseId
+        task.spawn(function()
+            local map = Workspace:WaitForChild("Map")
+            local basesFolder = map:WaitForChild("PlayerBases")
+            local baseFolder = basesFolder:WaitForChild(baseId)
+            local album = baseFolder:WaitForChild("Album")
+            local prompt = album:WaitForChild("AlbumPrompt") :: ProximityPrompt?
+            if prompt then
+                prompt.Triggered:Connect(function(player)
+                    if player == Player then
+                        openAlbum()
+                    end
+                end)
+            end
+        end)
+    end)
+
+    -- Initialize physical album boards
+    task.spawn(setupPhysicalAlbums)
 end
 
 return InventoryController

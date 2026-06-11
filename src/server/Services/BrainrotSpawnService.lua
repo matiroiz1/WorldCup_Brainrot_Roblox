@@ -59,74 +59,108 @@ end
 -- keep the same signature and return a Model with PrimaryPart = HumanoidRootPart.
 
 local function createNPCModel(def: any, position: Vector3): Model
-    local model = Instance.new("Model")
-    model.Name  = "BrainrotNPC_" .. def.id
+    local assets = ReplicatedStorage:FindFirstChild("Assets")
+    local mobsFolder = assets and assets:FindFirstChild("Mobs")
+    local template = mobsFolder and mobsFolder:FindFirstChild(def.id)
 
-    -- Body
-    local hrp = Instance.new("Part")
-    hrp.Name        = "HumanoidRootPart"
-    hrp.Size        = Vector3.new(4, 5, 4)
-    hrp.CFrame      = CFrame.new(position)
-    hrp.BrickColor  = RARITY_COLORS[def.brainrotType] or BrickColor.new("Medium stone grey")
-    hrp.Material    = Enum.Material.SmoothPlastic
-    hrp.Anchored    = false
-    hrp.CanCollide  = true
-    hrp.Parent      = model
+    local model
+    local hrp
+    local humanoid
 
-    -- Head (visual)
-    local head = Instance.new("Part")
-    head.Name       = "Head"
-    head.Size       = Vector3.new(3.5, 3.5, 3.5)
-    head.BrickColor = RARITY_COLORS[def.brainrotType] or BrickColor.new("Medium stone grey")
-    head.Material   = Enum.Material.SmoothPlastic
-    head.Anchored   = false
-    head.CanCollide = false
-    head.Parent     = model
+    if template then
+        model = template:Clone()
+        model.Name = "BrainrotNPC_" .. def.id
+        
+        hrp = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
+        if not hrp then
+            hrp = model:FindFirstChildOfClass("BasePart")
+        end
+        if hrp then
+            hrp.CFrame = CFrame.new(position)
+            model.PrimaryPart = hrp
+        end
+        
+        humanoid = model:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid.WalkSpeed = WALK_SPEEDS[def.brainrotType] or 12
+            humanoid.JumpPower = 0
+            humanoid.MaxHealth = 100
+            humanoid.Health = 100
+            humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+        end
+    else
+        model = Instance.new("Model")
+        model.Name  = "BrainrotNPC_" .. def.id
 
-    local weld = Instance.new("WeldConstraint")
-    weld.Part0  = hrp
-    weld.Part1  = head
-    weld.Parent = hrp
+        -- Body
+        hrp = Instance.new("Part")
+        hrp.Name        = "HumanoidRootPart"
+        hrp.Size        = Vector3.new(4, 5, 4)
+        hrp.CFrame      = CFrame.new(position)
+        hrp.BrickColor  = RARITY_COLORS[def.brainrotType] or BrickColor.new("Medium stone grey")
+        hrp.Material    = Enum.Material.SmoothPlastic
+        hrp.Anchored    = false
+        hrp.CanCollide  = true
+        hrp.Parent      = model
 
-    head.CFrame = hrp.CFrame * CFrame.new(0, 4.5, 0)
+        -- Head (visual)
+        local head = Instance.new("Part")
+        head.Name       = "Head"
+        head.Size       = Vector3.new(3.5, 3.5, 3.5)
+        head.BrickColor = RARITY_COLORS[def.brainrotType] or BrickColor.new("Medium stone grey")
+        head.Material   = Enum.Material.SmoothPlastic
+        head.Anchored   = false
+        head.CanCollide = false
+        head.Parent     = model
 
-    -- Humanoid (required for MoveTo)
-    local humanoid = Instance.new("Humanoid")
-    humanoid.WalkSpeed     = WALK_SPEEDS[def.brainrotType] or 12
-    humanoid.JumpPower     = 0
-    humanoid.MaxHealth     = 100
-    humanoid.Health        = 100
-    humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
-    humanoid.Parent        = model
+        local weld = Instance.new("WeldConstraint")
+        weld.Part0  = hrp
+        weld.Part1  = head
+        weld.Parent = hrp
 
-    -- Name tag billboard
-    local bb = Instance.new("BillboardGui")
-    bb.Size         = UDim2.new(0, 180, 0, 55)
-    bb.StudsOffset  = Vector3.new(0, 5, 0)
-    bb.AlwaysOnTop  = false
-    bb.Parent       = hrp
+        head.CFrame = hrp.CFrame * CFrame.new(0, 4.5, 0)
 
-    local nameLbl = Instance.new("TextLabel")
-    nameLbl.Size                 = UDim2.fromScale(1, 0.6)
-    nameLbl.BackgroundTransparency = 1
-    nameLbl.Text                 = def.name
-    nameLbl.TextColor3           = Color3.new(1, 1, 1)
-    nameLbl.TextScaled           = true
-    nameLbl.Font                 = Enum.Font.GothamBold
-    nameLbl.TextStrokeTransparency = 0.3
-    nameLbl.Parent               = bb
+        -- Humanoid (required for MoveTo)
+        humanoid = Instance.new("Humanoid")
+        humanoid.WalkSpeed     = WALK_SPEEDS[def.brainrotType] or 12
+        humanoid.JumpPower     = 0
+        humanoid.MaxHealth     = 100
+        humanoid.Health        = 100
+        humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+        humanoid.Parent        = model
 
-    local rarityLbl = Instance.new("TextLabel")
-    rarityLbl.Size               = UDim2.new(1, 0, 0.4, 0)
-    rarityLbl.Position           = UDim2.fromScale(0, 0.6)
-    rarityLbl.BackgroundTransparency = 1
-    rarityLbl.Text               = "[" .. def.brainrotType .. "]"
-    rarityLbl.TextColor3         = (RARITY_COLORS[def.brainrotType] or BrickColor.new("White")).Color
-    rarityLbl.TextScaled         = true
-    rarityLbl.Font               = Enum.Font.Gotham
-    rarityLbl.Parent             = bb
+        model.PrimaryPart = hrp
+    end
 
-    model.PrimaryPart = hrp
+    -- Add billboard name tag (always useful for clear naming)
+    if hrp then
+        local bb = Instance.new("BillboardGui")
+        bb.Size         = UDim2.new(0, 180, 0, 55)
+        bb.StudsOffset  = Vector3.new(0, 5, 0)
+        bb.AlwaysOnTop  = false
+        bb.Parent       = hrp
+
+        local nameLbl = Instance.new("TextLabel")
+        nameLbl.Size                 = UDim2.fromScale(1, 0.6)
+        nameLbl.BackgroundTransparency = 1
+        nameLbl.Text                 = def.name
+        nameLbl.TextColor3           = Color3.new(1, 1, 1)
+        nameLbl.TextScaled           = true
+        nameLbl.Font                 = Enum.Font.GothamBold
+        nameLbl.TextStrokeTransparency = 0.3
+        nameLbl.Parent               = bb
+
+        local rarityLbl = Instance.new("TextLabel")
+        rarityLbl.Size               = UDim2.new(1, 0, 0.4, 0)
+        rarityLbl.Position           = UDim2.fromScale(0, 0.6)
+        rarityLbl.BackgroundTransparency = 1
+        rarityLbl.Text               = "[" .. def.brainrotType .. "]"
+        rarityLbl.TextColor3         = (RARITY_COLORS[def.brainrotType] or BrickColor.new("White")).Color
+        rarityLbl.TextScaled         = true
+        rarityLbl.Font               = Enum.Font.Gotham
+        rarityLbl.Parent             = bb
+    end
+
     return model
 end
 

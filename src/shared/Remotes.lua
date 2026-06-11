@@ -1,7 +1,12 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local Net = require(ReplicatedStorage.Packages.Net)
 
-return Net.CreateDefinitions({
+local definitions = Net.CreateDefinitions({
+
+    -- Reflex replication / middlewares
+    broadcast            = Net.Definitions.ServerToClientEvent(),
+    start                = Net.Definitions.ClientToServerEvent(),
 
     -- Brainrot / Chase
     BrainrotSpawned      = Net.Definitions.ServerToClientEvent(),
@@ -13,6 +18,9 @@ return Net.CreateDefinitions({
     InventoryUpdated     = Net.Definitions.ServerToClientEvent(),
     AlbumUpdated         = Net.Definitions.ServerToClientEvent(),
     RequestSecureCard    = Net.Definitions.ClientToServerEvent(),
+    DetachCardSelf       = Net.Definitions.ClientToServerEvent(),
+    RequestStealAlbumCard = Net.Definitions.ClientToServerEvent(),
+    ViewAlbum            = Net.Definitions.ServerToClientEvent(),
 
     -- Economy
     CoinsUpdated         = Net.Definitions.ServerToClientEvent(),
@@ -51,7 +59,50 @@ return Net.CreateDefinitions({
     BaseAssigned         = Net.Definitions.ServerToClientEvent(),
     RequestBaseUpgrade   = Net.Definitions.ClientToServerEvent(),
     BaseUpgraded         = Net.Definitions.ServerToClientEvent(),
+    ToggleBaseLock       = Net.Definitions.ClientToServerEvent(),
 
     -- Player Data
     PlayerDataLoaded     = Net.Definitions.ServerToClientEvent(),
 })
+
+-- Metatable wrapper to automatically handle:
+-- 1. Direct indexing (e.g. Remotes.Notification)
+-- 2. .Server / .Client namespaces (for Reflex middleware)
+-- 3. :FindFirstChild("EventName") (for compatibility checks in services)
+local wrapper = {}
+local isServer = RunService:IsServer()
+
+-- Expose .Server and .Client explicitly for store middleware compatibility
+wrapper.Server = definitions.Server
+wrapper.Client = definitions.Client
+
+function wrapper:FindFirstChild(key: string)
+    local ok, event = pcall(function()
+        if isServer then
+            return definitions.Server:Get(key)
+        else
+            return definitions.Client:Get(key)
+        end
+    end)
+    return if ok then event else nil
+end
+
+setmetatable(wrapper, {
+    __index = function(self, key)
+        -- If they check for Server or Client directly
+        if key == "Server" or key == "Client" then
+            return definitions[key]
+        elseif key == "FindFirstChild" then
+            return wrapper.FindFirstChild
+        end
+        
+        -- Otherwise, automatically resolve using Get on the current side
+        if isServer then
+            return definitions.Server:Get(key)
+        else
+            return definitions.Client:Get(key)
+        end
+    end
+})
+
+return wrapper

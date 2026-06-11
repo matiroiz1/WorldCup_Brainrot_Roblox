@@ -12,5 +12,5 @@ Reflex = "littensy/reflex@4.3.1"
 Sift = "csqrl/sift@0.0.8"
 
 [server-dependencies]
-ProfileStore = "loleris/profilestore@1.0.0"
+ProfileService = "grilme99/profileservice@1.0.0"
 Cmdr = "evaera/cmdr@1.12.0"

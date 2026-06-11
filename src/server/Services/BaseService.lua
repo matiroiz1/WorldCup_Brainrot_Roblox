@@ -11,6 +11,8 @@ local BASE_COUNT = 15
 local Occupied: { [string]: number } = {}
 -- Runtime state: userId -> baseId
 local PlayerBases: { [number]: string } = {}
+-- Runtime state: baseId -> isLocked boolean
+local LockedBases: { [string]: boolean } = {}
 
 local BaseService = {}
 
@@ -51,12 +53,105 @@ end
 
 -- ── Public API ────────────────────────────────────────────────────────
 
+function BaseService.updateBaseVisuals(baseId: string, isLocked: boolean)
+    local map = Workspace:FindFirstChild("Map")
+    if not map then return end
+    local basesFolder = map:FindFirstChild("PlayerBases")
+    if not basesFolder then return end
+    local folder = basesFolder:FindFirstChild(baseId)
+    if not folder then return end
+    
+    local door = folder:FindFirstChild("Door")
+    if door and door:IsA("BasePart") then
+        door.CanCollide = isLocked
+        door.Transparency = isLocked and 0.2 or 0.9
+        door.Color = isLocked and Color3.fromRGB(255, 50, 50) or Color3.fromRGB(50, 255, 50)
+        door.Material = Enum.Material.Neon
+    end
+end
+
+function BaseService.syncPhysicalAlbum(player: Player)
+    local baseId = PlayerBases[player.UserId]
+    if not baseId then return end
+    
+    local map = Workspace:FindFirstChild("Map")
+    if not map then return end
+    local basesFolder = map:FindFirstChild("PlayerBases")
+    if not basesFolder then return end
+    local baseFolder = basesFolder:FindFirstChild(baseId)
+    if not baseFolder then return end
+    
+    local albumSlotsFolder = baseFolder:FindFirstChild("AlbumSlots")
+    if not albumSlotsFolder then
+        albumSlotsFolder = Instance.new("Folder")
+        albumSlotsFolder.Name = "AlbumSlots"
+        albumSlotsFolder.Parent = baseFolder
+    end
+    
+    local data = getPlayerDataService().getData(player)
+    local albumProgress = data and data.albumProgress or {}
+    
+    local wc2026Cards = {
+        "card_common_wc2026_arg",
+        "card_common_wc2026_bra",
+        "card_common_wc2026_fra",
+        "card_common_wc2026_eng",
+        "card_common_wc2026_esp",
+        "card_rare_wc2026_player_random",
+        "card_epic_wc2026_player_random"
+    }
+    
+    for _, cardId in ipairs(wc2026Cards) do
+        local key = "wc2026_" .. cardId
+        local hasCard = not not albumProgress[key]
+        
+        local val = albumSlotsFolder:FindFirstChild(cardId)
+        if not val then
+            val = Instance.new("BoolValue")
+            val.Name = cardId
+            val.Parent = albumSlotsFolder
+        end
+        val.Value = hasCard
+    end
+end
+
 function BaseService.getPlayerBase(player: Player): string?
     return PlayerBases[player.UserId]
 end
 
 function BaseService.getBaseOwner(baseId: string): number?
     return Occupied[baseId]
+end
+
+function BaseService.isBaseLocked(baseId: string): boolean
+    return LockedBases[baseId] or false
+end
+
+function BaseService.toggleLock(player: Player)
+    local baseId = PlayerBases[player.UserId]
+    if not baseId then return end
+    
+    local currentState = LockedBases[baseId] or false
+    
+    if not currentState then
+        -- Intentando bloquear. Verificar si tiene al menos 5 monedas (o gemas)
+        local PDS = getPlayerDataService()
+        local data = PDS.getData(player)
+        if not data or data.coins < 5 then
+            Remotes.Notification:FireClient(player, {type = "error", message = "No tienes suficientes monedas para bloquear."})
+            return
+        end
+    end
+
+    LockedBases[baseId] = not currentState
+    local newState = LockedBases[baseId]
+    
+    BaseService.updateBaseVisuals(baseId, newState)
+
+    Remotes.Notification:FireClient(player, {
+        type = "info", 
+        message = newState and "Base BLOQUEADA (Consumiendo monedas)" or "Base DESBLOQUEADA"
+    })
 end
 
 function BaseService.getBaseLevel(player: Player): number
@@ -132,6 +227,9 @@ function BaseService.assignBase(player: Player)
         baseLevel = data.baseLevel or 1,
         perks     = perks,
     })
+    
+    -- Sync physical album immediately on join/assignment
+    BaseService.syncPhysicalAlbum(player)
 end
 
 function BaseService.releaseBase(player: Player)
@@ -139,6 +237,21 @@ function BaseService.releaseBase(player: Player)
     if baseId then
         Occupied[baseId]          = nil
         PlayerBases[player.UserId] = nil
+        LockedBases[baseId]        = false
+        BaseService.updateBaseVisuals(baseId, false)
+        
+        -- Reset physical album slot values on release
+        local map = Workspace:FindFirstChild("Map")
+        local basesFolder = map and map:FindFirstChild("PlayerBases")
+        local baseFolder = basesFolder and basesFolder:FindFirstChild(baseId)
+        local albumSlotsFolder = baseFolder and baseFolder:FindFirstChild("AlbumSlots")
+        if albumSlotsFolder then
+            for _, val in ipairs(albumSlotsFolder:GetChildren()) do
+                if val:IsA("BoolValue") then
+                    val.Value = false
+                end
+            end
+        end
     end
 end
 
@@ -208,9 +321,87 @@ function BaseService.upgradeToLevel(player: Player, targetLevel: number): boolea
     return true
 end
 
+local function setupBasePrompts()
+    local map = Workspace:FindFirstChild("Map")
+    if not map then return end
+    local basesFolder = map:FindFirstChild("PlayerBases")
+    if not basesFolder then return end
+
+    for _, folder in ipairs(basesFolder:GetChildren()) do
+        if folder:IsA("Folder") or folder:IsA("Model") then
+            local baseId = folder.Name
+
+            -- LockSwitch Prompt
+            local lockSwitch = folder:FindFirstChild("LockSwitch")
+            if lockSwitch then
+                local prompt = lockSwitch:FindFirstChild("LockPrompt") :: ProximityPrompt?
+                if prompt then
+                    prompt.Triggered:Connect(function(player)
+                        local myBaseId = PlayerBases[player.UserId]
+                        if myBaseId == baseId then
+                            BaseService.toggleLock(player)
+                        else
+                            Remotes.Notification:FireClient(player, {
+                                type    = "error",
+                                message = "Solo el dueño puede bloquear esta base.",
+                            })
+                        end
+                    end)
+                end
+            end
+
+            -- Album Prompt
+            local album = folder:FindFirstChild("Album")
+            if album then
+                local prompt = album:FindFirstChild("AlbumPrompt") :: ProximityPrompt?
+                if prompt then
+                    prompt.Triggered:Connect(function(player)
+                        local ownerId = Occupied[baseId]
+                        if ownerId == player.UserId then
+                            -- El dueño interactúa con su propio álbum
+                            -- Firing AlbumUpdated syncs data; we'll also tell client to open their own album screen
+                            Remotes.AlbumUpdated:FireClient(player, {
+                                albumProgress = getPlayerDataService().getData(player).albumProgress or {}
+                            })
+                        else
+                            -- Ladrón intentando interactuar
+                            if BaseService.isBaseLocked(baseId) then
+                                Remotes.Notification:FireClient(player, {
+                                    type    = "error",
+                                    message = "¡La base está asegurada! No podés robar.",
+                                })
+                                return
+                            end
+
+                            if not ownerId then
+                                Remotes.Notification:FireClient(player, {
+                                    type    = "warning",
+                                    message = "Esta base no tiene dueño asignado.",
+                                })
+                                return
+                            end
+
+                            local victim = Players:GetPlayerByUserId(ownerId)
+                            if not victim then return end
+
+                            local victimData = getPlayerDataService().getData(victim)
+                            if not victimData then return end
+
+                            -- Abrir visor del álbum de la víctima para el ladrón
+                            Remotes.ViewAlbum:FireClient(player, baseId, victim.DisplayName, victimData.albumProgress or {})
+                        end
+                    end)
+                end
+            end
+        end
+    end
+end
+
 -- ── Init ──────────────────────────────────────────────────────────────
 
 function BaseService.OnStart()
+    setupBasePrompts()
+
     Players.PlayerAdded:Connect(function(player)
         -- PlayerDataService loads profile asynchronously; wait for it
         task.delay(2.5, function()
@@ -229,6 +420,44 @@ function BaseService.OnStart()
                 type    = "error",
                 message = reason,
             })
+        end
+    end)
+    
+    -- Agregar ToggleLock a Remotes si no existe
+    if Remotes:FindFirstChild("ToggleBaseLock") then
+        Remotes.ToggleBaseLock:Connect(function(player)
+            BaseService.toggleLock(player)
+        end)
+    end
+
+    -- Loop de cobro por bloqueo (cada 5 segundos cobra 5 monedas)
+    task.spawn(function()
+        while true do
+            task.wait(5)
+            local PDS = getPlayerDataService()
+            for baseId, isLocked in pairs(LockedBases) do
+                if isLocked then
+                    local ownerId = Occupied[baseId]
+                    if ownerId then
+                        local player = Players:GetPlayerByUserId(ownerId)
+                        if player then
+                            local data = PDS.getData(player)
+                            if data and data.coins >= 5 then
+                                PDS.update(player, function(d) d.coins = d.coins - 5 end)
+                                Remotes.CoinsUpdated:FireClient(player, data.coins - 5)
+                            else
+                                -- Se quedó sin plata, desbloqueamos la base
+                                LockedBases[baseId] = false
+                                BaseService.updateBaseVisuals(baseId, false)
+                                Remotes.Notification:FireClient(player, {type = "error", message = "Base desbloqueada: Sin saldo suficiente."})
+                            end
+                        else
+                            LockedBases[baseId] = false
+                            BaseService.updateBaseVisuals(baseId, false)
+                        end
+                    end
+                end
+            end
         end
     end)
 end

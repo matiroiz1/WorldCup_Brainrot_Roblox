@@ -4,14 +4,8 @@
 
     Priority (highest first):
       1. PlayerBases  → "PlayerBase:Base_N"
-      2. MiniPitch    → "MiniPitch"
-      3. TradingZone  → "TradingZone"
-      4. SafeZone     → "SafeZone"
-      5. DangerZone   → "DangerZone"
+      2. DangerZone   → "DangerZone"
       nil             → outside map
-
-    PlayerBases checked first because base plots sit inside DangerZone
-    and would otherwise be incorrectly labelled as danger.
 ]]
 
 local Workspace = game:GetService("Workspace")
@@ -46,7 +40,7 @@ local function getZonePartsAll(): { [string]: { BasePart } }
             local folder = map:FindFirstChild(zoneName)
             if folder then
                 for _, child in ipairs(folder:GetDescendants()) do
-                    if child:IsA("BasePart") then
+                    if child:IsA("BasePart") and child.Name == "Boundary" then
                         table.insert(cache[zoneName], child :: BasePart)
                     end
                 end
@@ -66,7 +60,7 @@ local function getBaseAtPosition(position: Vector3): string?
     local basesFolder = map:FindFirstChild("PlayerBases")
     if not basesFolder then return nil end
     for _, folder in ipairs(basesFolder:GetChildren()) do
-        if folder:IsA("Folder") then
+        if folder:IsA("Model") or folder:IsA("Folder") then
             local boundary = folder:FindFirstChild("Boundary")
             if boundary and boundary:IsA("BasePart") then
                 if isInsidePart(boundary :: BasePart, position) then
@@ -78,15 +72,6 @@ local function getBaseAtPosition(position: Vector3): string?
     return nil
 end
 
--- ── Zone detection priority ───────────────────────────────────────────
--- Named zones checked in this order after PlayerBase check.
-local NAMED_PRIORITY = {
-    Zones.Names.Pitch,    -- MiniPitch
-    Zones.Names.Trading,  -- TradingZone
-    Zones.Names.Safe,     -- SafeZone
-    Zones.Names.Danger,   -- DangerZone
-}
-
 -- ── Public API ────────────────────────────────────────────────────────
 
 -- Returns zone tag: "PlayerBase:Base_N", a Zones.Names value, or nil.
@@ -95,9 +80,9 @@ function ZoneUtils.getZoneAtPosition(position: Vector3): string?
     local baseId = getBaseAtPosition(position)
     if baseId then return "PlayerBase:" .. baseId end
 
-    -- Priority 2-5: named zones
+    -- Priority 2: named zones (DangerZone, TradeZone, etc.)
     local cache = getZonePartsAll()
-    for _, zoneName in ipairs(NAMED_PRIORITY) do
+    for _, zoneName in pairs(Zones.Names) do
         for _, part in ipairs(cache[zoneName] or {}) do
             if isInsidePart(part, position) then
                 return zoneName
@@ -105,7 +90,7 @@ function ZoneUtils.getZoneAtPosition(position: Vector3): string?
         end
     end
 
-    return nil
+    return "DangerZone" -- Default to DangerZone if on map
 end
 
 -- Returns the zone tag for a player's HumanoidRootPart position.
@@ -118,12 +103,29 @@ function ZoneUtils.getPlayerZone(player: Player): string?
 end
 
 -- Returns true if the player is currently in a safe (non-PvP) zone.
--- All PlayerBases are safe pre-Etapa 9; Etapa 9 will refine to owner-only.
 function ZoneUtils.isPlayerSafe(player: Player): boolean
     local zone = ZoneUtils.getPlayerZone(player)
-    if not zone then return true end  -- outside map → safe by default
-    if zone:sub(1, 11) == "PlayerBase:" then return true end
-    return Zones.PvPEnabled[zone] == false
+    if not zone then return false end
+    
+    if zone:sub(1, 11) == "PlayerBase:" then
+        local baseId = zone:sub(12)
+        -- Check with BaseService if this base is currently locked
+        -- We must use a safe require to avoid circular dependencies if called from client
+        local ok, BaseService = pcall(function()
+            return require(script.Parent.Parent.Parent.server.Services.BaseService)
+        end)
+        
+        if ok and BaseService then
+            return BaseService.isBaseLocked(baseId)
+        else
+            -- If on client, or BaseService not available, we assume it's unsafe 
+            -- or rely on a ReplicatedStorage state (For now, assume false on client)
+            -- A proper implementation would sync LockedBases to ReplicatedStorage.
+            return false 
+        end
+    end
+    
+    return false -- Everything else is PvP
 end
 
 -- Returns "Base_N" if position is inside any player base, else nil.
@@ -138,29 +140,6 @@ function ZoneUtils.getPlayerBase(player: Player): string?
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return nil end
     return getBaseAtPosition(hrp.Position)
-end
-
--- Returns true if the player is inside their own assigned base.
--- Requires BaseService; use only on server.
-function ZoneUtils.isInOwnBase(player: Player): boolean
-    local baseId = ZoneUtils.getPlayerBase(player)
-    if not baseId then return false end
-    local BaseService = require(script.Parent.Parent.Parent.Services.BaseService)
-    return BaseService.getPlayerBase(player) == baseId
-end
-
--- Returns the coin multiplier for a zone tag.
-function ZoneUtils.getCoinMultiplier(zoneTag: string?): number
-    if not zoneTag then return 1.0 end
-    if zoneTag:sub(1, 11) == "PlayerBase:" then return 1.0 end
-    return Zones.CoinMultiplier[zoneTag] or 1.0
-end
-
--- Returns the rarity multiplier for a zone tag.
-function ZoneUtils.getRarityMultiplier(zoneTag: string?): number
-    if not zoneTag then return 1.0 end
-    if zoneTag:sub(1, 11) == "PlayerBase:" then return 1.0 end
-    return Zones.RarityMultiplier[zoneTag] or 1.0
 end
 
 -- Invalidate cache (call if map structure changes at runtime).
