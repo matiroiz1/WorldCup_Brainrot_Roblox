@@ -6,318 +6,376 @@ local Remotes   = require(ReplicatedStorage.Remotes)
 local Brainrots = require(ReplicatedStorage.Config.Brainrots)
 local Economy   = require(ReplicatedStorage.Config.Economy)
 
--- ── Constants ─────────────────────────────────────────────────────────
+-- ── Constants ─────────────────────────────────────────────────────────────
 
-local FLEE_RANGE      = 20
-local WANDER_RADIUS   = 45
-local AI_TICK         = 0.5
-local MAX_TOTAL_NPCS  = 20
-local DESPAWN_AFTER   = 300  -- seconds before an uncaptured NPC auto-despawns
-local FALL_Y_LIMIT    = -50
+local MAX_TOTAL_NPCS  = 15
+local DESPAWN_AFTER   = 300
+local WANDER_RADIUS   = 35
+local FLEE_RANGE      = 18
+local FALL_Y          = -40
+
+-- Roblox R6 standard animation IDs
+local ANIM_WALK = "rbxassetid://180426354"
+local ANIM_IDLE = "rbxassetid://180435571"
 
 local RARITY_COLORS = {
-    Common    = BrickColor.new("Medium stone grey"),
-    Rare      = BrickColor.new("Bright blue"),
-    Elite     = BrickColor.new("Royal purple"),
-    Legendary = BrickColor.new("Bright yellow"),
-    Chaotic   = BrickColor.new("Bright orange"),
+    Common    = Color3.fromRGB(180, 180, 180),
+    Rare      = Color3.fromRGB(60, 120, 220),
+    Elite     = Color3.fromRGB(150, 40, 210),
+    Legendary = Color3.fromRGB(230, 170, 10),
+    Chaotic   = Color3.fromRGB(220, 80, 20),
+}
+
+local RARITY_EMOJIS = {
+    Common    = "⚽",
+    Rare      = "🌟",
+    Elite     = "💎",
+    Legendary = "👑",
+    Chaotic   = "🔥",
 }
 
 local WALK_SPEEDS = {
     Common    = 10,
-    Rare      = 14,
-    Elite     = 18,
+    Rare      = 13,
+    Elite     = 17,
     Legendary = 22,
-    Chaotic   = 16,
+    Chaotic   = 15,
 }
 
--- ── State ─────────────────────────────────────────────────────────────
+-- ── State ─────────────────────────────────────────────────────────────────
 
--- ActiveBrainrots[instanceId] = { defId, model, spawnPos, beingCaptured, capturedBy }
 local ActiveBrainrots: { [string]: any } = {}
--- AiTasks[instanceId] = thread (so we can cancel on despawn)
-local AiTasks: { [string]: thread } = {}
-
-local spawnPoints: { Vector3 } = {}
+local AiTasks:         { [string]: thread } = {}
+local spawnPoints:     { Vector3 } = {}
 
 local BrainrotSpawnService = {}
 
--- ── Spawn point collection ────────────────────────────────────────────
+-- ── R6 rig builder ────────────────────────────────────────────────────────
+-- Builds a complete R6 character rig from scratch with proper Motor6D joints
+-- so standard Roblox walk/idle animations work correctly.
+
+local function buildR6NPC(def: any): (Model, Humanoid, Animator)
+    local bodyColor = RARITY_COLORS[def.brainrotType] or Color3.fromRGB(160, 160, 160)
+    local speed     = WALK_SPEEDS[def.brainrotType] or 10
+
+    local model = Instance.new("Model")
+    model.Name  = "BrainrotNPC_" .. def.id
+
+    -- Helper: create a body part
+    local function part(name: string, size: Vector3, color: Color3, canCollide: boolean): Part
+        local p = Instance.new("Part")
+        p.Name        = name
+        p.Size        = size
+        p.Color       = color
+        p.CanCollide  = canCollide
+        p.Anchored    = false
+        p.CastShadow  = true
+        p.Parent      = model
+        return p
+    end
+
+    -- Root (invisible, physics anchor)
+    local hrp = part("HumanoidRootPart", Vector3.new(2, 2, 1), Color3.new(), false)
+    hrp.Transparency = 1
+
+    -- Body parts (visible)
+    local torso    = part("Torso",     Vector3.new(2, 2, 1), bodyColor, false)
+    local head     = part("Head",      Vector3.new(2, 1, 1), bodyColor, false)
+    local leftArm  = part("Left Arm",  Vector3.new(1, 2, 1), bodyColor, false)
+    local rightArm = part("Right Arm", Vector3.new(1, 2, 1), bodyColor, false)
+    local leftLeg  = part("Left Leg",  Vector3.new(1, 2, 1), bodyColor, false)
+    local rightLeg = part("Right Leg", Vector3.new(1, 2, 1), bodyColor, false)
+
+    -- Head mesh (makes it look like a Roblox head, not a flat box)
+    local mesh = Instance.new("SpecialMesh")
+    mesh.MeshType = Enum.MeshType.Head
+    mesh.Scale    = Vector3.new(1.25, 1.25, 1.25)
+    mesh.Parent   = head
+
+    -- Humanoid (R6 mode)
+    local humanoid = Instance.new("Humanoid")
+    humanoid.RigType              = Enum.HumanoidRigType.R6
+    humanoid.WalkSpeed            = speed
+    humanoid.JumpPower            = 0
+    humanoid.MaxHealth            = 100
+    humanoid.Health               = 100
+    humanoid.DisplayDistanceType  = Enum.HumanoidDisplayDistanceType.None
+    humanoid.HealthDisplayDistance = 0
+    humanoid.Parent               = model
+
+    local animator = Instance.new("Animator")
+    animator.Parent = humanoid
+
+    -- Motor6D joints (exact Roblox R6 default offsets so standard animations work)
+    local function motor(parent: BasePart, name: string, p0: BasePart, p1: BasePart, c0: CFrame, c1: CFrame)
+        local m  = Instance.new("Motor6D")
+        m.Name   = name
+        m.Part0  = p0
+        m.Part1  = p1
+        m.C0     = c0
+        m.C1     = c1
+        m.Parent = parent
+    end
+
+    motor(hrp, "RootJoint", hrp, torso,
+        CFrame.new(0, -1, 0, -1, 0, 0, 0, 0, 1, 0, 1, 0),
+        CFrame.new(0, -1, 0, -1, 0, 0, 0, 0, 1, 0, 1, 0))
+
+    motor(torso, "Neck", torso, head,
+        CFrame.new(0, 1, 0, -1, 0, 0, 0, 0, 1, 0, 1, 0),
+        CFrame.new(0, -0.5, 0, -1, 0, 0, 0, 0, 1, 0, 1, 0))
+
+    motor(torso, "Left Shoulder", torso, leftArm,
+        CFrame.new(-1, 0.5, 0, 0, 0, -1, 0, 1, 0, 1, 0, 0),
+        CFrame.new(0.5, 0.5, 0, 0, 0, -1, 0, 1, 0, 1, 0, 0))
+
+    motor(torso, "Right Shoulder", torso, rightArm,
+        CFrame.new(1, 0.5, 0, 0, 0, 1, 0, 1, 0, -1, 0, 0),
+        CFrame.new(-0.5, 0.5, 0, 0, 0, 1, 0, 1, 0, -1, 0, 0))
+
+    motor(torso, "Left Hip", torso, leftLeg,
+        CFrame.new(-0.5, -1, 0, 0, 0, -1, 0, 1, 0, 1, 0, 0),
+        CFrame.new(-0.5, 1, 0, 0, 0, -1, 0, 1, 0, 1, 0, 0))
+
+    motor(torso, "Right Hip", torso, rightLeg,
+        CFrame.new(0.5, -1, 0, 0, 0, 1, 0, 1, 0, -1, 0, 0),
+        CFrame.new(0.5, 1, 0, 0, 0, 1, 0, 1, 0, -1, 0, 0))
+
+    -- Name billboard above head
+    local bb = Instance.new("BillboardGui")
+    bb.Size         = UDim2.new(0, 160, 0, 50)
+    bb.StudsOffset  = Vector3.new(0, 4, 0)
+    bb.AlwaysOnTop  = false
+    bb.Parent       = hrp
+
+    local nameLbl = Instance.new("TextLabel")
+    nameLbl.Size                   = UDim2.fromScale(1, 0.6)
+    nameLbl.BackgroundTransparency = 1
+    nameLbl.Text                   = (RARITY_EMOJIS[def.brainrotType] or "") .. " " .. def.name
+    nameLbl.TextColor3             = Color3.new(1, 1, 1)
+    nameLbl.TextScaled             = true
+    nameLbl.Font                   = Enum.Font.GothamBold
+    nameLbl.TextStrokeTransparency = 0
+    nameLbl.Parent                 = bb
+
+    local rarLbl = Instance.new("TextLabel")
+    rarLbl.Size                   = UDim2.new(1, 0, 0.4, 0)
+    rarLbl.Position               = UDim2.fromScale(0, 0.6)
+    rarLbl.BackgroundTransparency = 1
+    rarLbl.Text                   = "[" .. def.brainrotType .. "]"
+    rarLbl.TextColor3             = bodyColor
+    rarLbl.TextScaled             = true
+    rarLbl.Font                   = Enum.Font.Gotham
+    rarLbl.TextStrokeTransparency = 0
+    rarLbl.Parent                 = bb
+
+    model.PrimaryPart = hrp
+    return model, humanoid, animator
+end
+
+-- ── Spawn point collection ────────────────────────────────────────────────
 
 local function collectSpawnPoints()
-    local map = Workspace:FindFirstChild("Map")
-    if not map then return end
-    local folder = map:FindFirstChild("BrainrotSpawns")
-    if not folder then return end
-    for _, part in ipairs(folder:GetChildren()) do
-        if part:IsA("BasePart") then
-            table.insert(spawnPoints, part.Position + Vector3.new(0, 3, 0))
+    local map    = Workspace:FindFirstChild("Map")
+    local folder = map and map:FindFirstChild("BrainrotSpawns")
+    if not folder then
+        warn("[BrainrotSpawnService] Map.BrainrotSpawns not found")
+        return
+    end
+    for _, p in ipairs(folder:GetChildren()) do
+        if p:IsA("BasePart") then
+            -- +4 so the NPC spawns above ground (R6 rig is ~5 units tall from ground)
+            table.insert(spawnPoints, p.Position + Vector3.new(0, 4, 0))
         end
     end
 end
 
--- ── NPC model creation ────────────────────────────────────────────────
--- Placeholder model until real 3D assets are added.
--- When you have actual models: replace this function body,
--- keep the same signature and return a Model with PrimaryPart = HumanoidRootPart.
-
-local function createNPCModel(def: any, position: Vector3): Model
-    local assets = ReplicatedStorage:FindFirstChild("Assets")
-    local mobsFolder = assets and assets:FindFirstChild("Mobs")
-    local template = mobsFolder and mobsFolder:FindFirstChild(def.id)
-
-    local model
-    local hrp
-    local humanoid
-
-    if template then
-        model = template:Clone()
-        model.Name = "BrainrotNPC_" .. def.id
-
-        -- Desanclar todos los parts del template clonado
-        for _, part in ipairs(model:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.Anchored = false
-            end
-        end
-
-        hrp = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
-        if not hrp then
-            hrp = model:FindFirstChildOfClass("BasePart")
-        end
-        if hrp then
-            model.PrimaryPart = hrp
-        end
-
-        humanoid = model:FindFirstChildOfClass("Humanoid")
-        if humanoid then
-            humanoid.WalkSpeed = WALK_SPEEDS[def.brainrotType] or 12
-            humanoid.JumpPower = 0
-            humanoid.MaxHealth = 100
-            humanoid.Health = 100
-            humanoid.HipHeight = humanoid.HipHeight > 0 and humanoid.HipHeight or 2
-            humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
-        end
-    else
-        model = Instance.new("Model")
-        model.Name  = "BrainrotNPC_" .. def.id
-
-        -- Body
-        hrp = Instance.new("Part")
-        hrp.Name        = "HumanoidRootPart"
-        hrp.Size        = Vector3.new(4, 5, 4)
-        hrp.CFrame      = CFrame.new(position)
-        hrp.BrickColor  = RARITY_COLORS[def.brainrotType] or BrickColor.new("Medium stone grey")
-        hrp.Material    = Enum.Material.SmoothPlastic
-        hrp.Anchored    = false
-        hrp.CanCollide  = true
-        hrp.Parent      = model
-
-        -- Head (visual)
-        local head = Instance.new("Part")
-        head.Name       = "Head"
-        head.Size       = Vector3.new(3.5, 3.5, 3.5)
-        head.BrickColor = RARITY_COLORS[def.brainrotType] or BrickColor.new("Medium stone grey")
-        head.Material   = Enum.Material.SmoothPlastic
-        head.Anchored   = false
-        head.CanCollide = false
-        head.Parent     = model
-
-        local weld = Instance.new("WeldConstraint")
-        weld.Part0  = hrp
-        weld.Part1  = head
-        weld.Parent = hrp
-
-        head.CFrame = hrp.CFrame * CFrame.new(0, 4.5, 0)
-
-        -- Humanoid (required for MoveTo)
-        humanoid = Instance.new("Humanoid")
-        humanoid.WalkSpeed     = WALK_SPEEDS[def.brainrotType] or 12
-        humanoid.JumpPower     = 0
-        humanoid.MaxHealth     = 100
-        humanoid.Health        = 100
-        humanoid.HipHeight     = 2
-        humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
-        humanoid.Parent        = model
-
-        model.PrimaryPart = hrp
-    end
-
-    -- Add billboard name tag (always useful for clear naming)
-    if hrp then
-        local bb = Instance.new("BillboardGui")
-        bb.Size         = UDim2.new(0, 180, 0, 55)
-        bb.StudsOffset  = Vector3.new(0, 5, 0)
-        bb.AlwaysOnTop  = false
-        bb.Parent       = hrp
-
-        local nameLbl = Instance.new("TextLabel")
-        nameLbl.Size                 = UDim2.fromScale(1, 0.6)
-        nameLbl.BackgroundTransparency = 1
-        nameLbl.Text                 = def.name
-        nameLbl.TextColor3           = Color3.new(1, 1, 1)
-        nameLbl.TextScaled           = true
-        nameLbl.Font                 = Enum.Font.GothamBold
-        nameLbl.TextStrokeTransparency = 0.3
-        nameLbl.Parent               = bb
-
-        local rarityLbl = Instance.new("TextLabel")
-        rarityLbl.Size               = UDim2.new(1, 0, 0.4, 0)
-        rarityLbl.Position           = UDim2.fromScale(0, 0.6)
-        rarityLbl.BackgroundTransparency = 1
-        rarityLbl.Text               = "[" .. def.brainrotType .. "]"
-        rarityLbl.TextColor3         = (RARITY_COLORS[def.brainrotType] or BrickColor.new("White")).Color
-        rarityLbl.TextScaled         = true
-        rarityLbl.Font               = Enum.Font.Gotham
-        rarityLbl.Parent             = bb
-    end
-
-    return model
+local function randomSpawnPoint(): Vector3
+    return spawnPoints[math.random(1, #spawnPoints)]
 end
 
--- ── AI loop ───────────────────────────────────────────────────────────
+-- ── Helpers ───────────────────────────────────────────────────────────────
 
-local function getNearestPlayerDistance(position: Vector3): (Player?, number)
-    local nearest: Player? = nil
-    local nearestDist = math.huge
-    for _, player in ipairs(Players:GetPlayers()) do
-        local char = player.Character
-        if char then
-            local hrp = char:FindFirstChild("HumanoidRootPart")
-            if hrp then
-                local dist = (hrp.Position - position).Magnitude
-                if dist < nearestDist then
-                    nearestDist = dist
-                    nearest = player
-                end
-            end
+local function totalActive(): number
+    local n = 0
+    for _ in pairs(ActiveBrainrots) do n += 1 end
+    return n
+end
+
+local function countByType(brainrotType: string): number
+    local n = 0
+    for _, s in pairs(ActiveBrainrots) do
+        local d = Brainrots.getById(s.defId)
+        if d and d.brainrotType == brainrotType then n += 1 end
+    end
+    return n
+end
+
+local function nearestPlayer(pos: Vector3): (Player?, number)
+    local best, bestD = nil, math.huge
+    for _, p in ipairs(Players:GetPlayers()) do
+        local c = p.Character
+        local h = c and c:FindFirstChild("HumanoidRootPart")
+        if h then
+            local d = (h.Position - pos).Magnitude
+            if d < bestD then best, bestD = p, d end
         end
     end
-    return nearest, nearestDist
+    return best, bestD
 end
+
+local function loadTrack(animator: Animator, id: string): AnimationTrack
+    local anim        = Instance.new("Animation")
+    anim.AnimationId  = id
+    local track       = animator:LoadAnimation(anim)
+    anim:Destroy()
+    return track
+end
+
+-- ── AI loop ───────────────────────────────────────────────────────────────
 
 local function runAI(instanceId: string, def: any, spawnPos: Vector3)
-    -- Delay inicial aleatorio para que los NPCs no se muevan todos sincronizados
+    -- Randomize start so NPCs don't all move on the same frame
     task.wait(math.random() * 4)
 
-    local nextMoveAt = os.clock() + math.random(2, 6)
+    local state = ActiveBrainrots[instanceId]
+    if not state then return end
+
+    local model    = state.model
+    local humanoid = model:FindFirstChildOfClass("Humanoid")
+    local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
+    if not humanoid or not animator then return end
+
+    -- Load standard R6 animations
+    local walkTrack = loadTrack(animator, ANIM_WALK)
+    local idleTrack = loadTrack(animator, ANIM_IDLE)
+    walkTrack.Looped = true
+    idleTrack.Looped = true
+    idleTrack:Play()
+
+    local function setWalking(on: boolean)
+        if on then
+            idleTrack:Stop(0.2)
+            if not walkTrack.IsPlaying then walkTrack:Play(0.2) end
+        else
+            walkTrack:Stop(0.2)
+            if not idleTrack.IsPlaying then idleTrack:Play(0.2) end
+        end
+    end
 
     while true do
-        task.wait(AI_TICK)
+        -- Check still alive
+        local s = ActiveBrainrots[instanceId]
+        if not s or not model.Parent then break end
+        if s.beingCaptured then task.wait(0.5); continue end
 
-        local state = ActiveBrainrots[instanceId]
-        if not state then break end
-        if state.beingCaptured then continue end
-
-        local model    = state.model
-        if not model or not model.Parent then break end
-        local hrp      = model:FindFirstChild("HumanoidRootPart")
-        local humanoid = model:FindFirstChildOfClass("Humanoid")
-        if not hrp or not humanoid or humanoid.Health <= 0 then break end
+        local hrp = model:FindFirstChild("HumanoidRootPart")
+        if not hrp or humanoid.Health <= 0 then break end
 
         local pos = hrp.Position
 
-        -- Fall detection: si cayó del mapa, reposicionar en el spawn
-        if pos.Y < FALL_Y_LIMIT then
+        -- Fall off map → respawn at original point
+        if pos.Y < FALL_Y then
+            setWalking(false)
             model:PivotTo(CFrame.new(spawnPos))
-            nextMoveAt = os.clock() + math.random(1, 3)
+            task.wait(1)
             continue
         end
 
-        local now = os.clock()
-
-        -- Flee: huir del jugador más cercano, tiene prioridad sobre el wander
+        -- Flee from nearby player (highest priority)
         if def.moveStyle == "Flee" then
-            local nearPlayer, nearDist = getNearestPlayerDistance(pos)
-            if nearPlayer and nearDist < FLEE_RANGE then
-                local playerHrp = nearPlayer.Character and nearPlayer.Character:FindFirstChild("HumanoidRootPart")
-                if playerHrp then
-                    local dx = pos.X - playerHrp.Position.X
-                    local dz = pos.Z - playerHrp.Position.Z
-                    local len = math.sqrt(dx*dx + dz*dz)
-                    if len > 0 then
-                        local tx = math.clamp(pos.X + (dx/len) * 20, -280, 280)
-                        local tz = math.clamp(pos.Z + (dz/len) * 20, -280, 280)
-                        humanoid:MoveTo(Vector3.new(tx, pos.Y, tz))
-                        nextMoveAt = now + 1.5
-                    end
+            local nearP, nearD = nearestPlayer(pos)
+            if nearP and nearD < FLEE_RANGE then
+                local ph = nearP.Character and nearP.Character:FindFirstChild("HumanoidRootPart")
+                if ph then
+                    local flat = Vector3.new(pos.X - ph.Position.X, 0, pos.Z - ph.Position.Z)
+                    local dir  = flat.Magnitude > 0.1 and flat.Unit or Vector3.new(1, 0, 0)
+                    local tx   = math.clamp(pos.X + dir.X * 22, -280, 280)
+                    local tz   = math.clamp(pos.Z + dir.Z * 22, -280, 280)
+                    setWalking(true)
+                    humanoid:MoveTo(Vector3.new(tx, pos.Y, tz))
+                    task.wait(1.5)
+                    continue
                 end
-                continue
             end
         end
 
-        -- Wander: pick nuevo destino cuando toca
-        if now >= nextMoveAt then
-            local angle  = math.random() * math.pi * 2
-            local radius = math.random(10, WANDER_RADIUS)
-            local tx = math.clamp(spawnPos.X + math.cos(angle) * radius, -280, 280)
-            local tz = math.clamp(spawnPos.Z + math.sin(angle) * radius, -280, 280)
-            -- Y: usar la posición actual del suelo (pos.Y ya refleja dónde está parado)
-            humanoid:MoveTo(Vector3.new(tx, pos.Y, tz))
-            -- Próximo cambio de dirección aleatorio, independiente por NPC
-            nextMoveAt = now + math.random(4, 10)
+        -- Wander: pick a random point around the spawn origin
+        local angle  = math.random() * math.pi * 2
+        local radius = math.random(8, WANDER_RADIUS)
+        local tx     = math.clamp(spawnPos.X + math.cos(angle) * radius, -280, 280)
+        local tz     = math.clamp(spawnPos.Z + math.sin(angle) * radius, -280, 280)
+        local target = Vector3.new(tx, pos.Y, tz)
+
+        setWalking(true)
+        humanoid:MoveTo(target)
+
+        -- Wait up to 8s for arrival (Roblox's MoveTo timeout)
+        local done = false
+        local conn = humanoid.MoveToFinished:Connect(function() done = true end)
+        local t0   = tick()
+        while not done and (tick() - t0) < 8 do
+            task.wait(0.2)
+            if not ActiveBrainrots[instanceId] then break end
         end
+        conn:Disconnect()
+
+        setWalking(false)
+
+        -- Pause before next move (NPCs look more natural with idle breaks)
+        task.wait(math.random(2, 5))
     end
+
+    -- Cleanup animations if loop exits
+    pcall(function() walkTrack:Stop() end)
+    pcall(function() idleTrack:Stop() end)
 end
 
--- ── Spawn / Despawn ───────────────────────────────────────────────────
+-- ── Spawn / Despawn ───────────────────────────────────────────────────────
 
-local function generateInstanceId(): string
-    return tostring(os.clock()):gsub("%.", "") .. tostring(math.random(1000, 9999))
+local function generateId(): string
+    return tostring(math.random(100000, 999999)) .. tostring(os.clock()):gsub("%.", "")
 end
 
 function BrainrotSpawnService.spawnBrainrot(defId: string, position: Vector3?): string?
     local def = Brainrots.getById(defId)
-    if not def then
-        warn("[BrainrotSpawnService] Unknown defId:", defId)
-        return nil
-    end
+    if not def then return nil end
 
-    -- Pick spawn point if position not provided
-    if not position then
-        if #spawnPoints == 0 then
-            warn("[BrainrotSpawnService] No spawn points found")
-            return nil
-        end
-        position = spawnPoints[math.random(1, #spawnPoints)]
-    end
+    local spawnPos = position or randomSpawnPoint()
+    if not spawnPos then return nil end
 
-    local instanceId = generateInstanceId()
-    local model      = createNPCModel(def, position)
-    model.Name       = "BrainrotNPC_" .. instanceId
+    local instanceId            = generateId()
+    local model, humanoid, anim = buildR6NPC(def)
 
-    -- Primero parentear, luego PivotTo (así los constraints físicos están activos)
+    -- Parent first, then pivot (constraints need to be in workspace)
     model.Parent = Workspace
-    if model.PrimaryPart then
-        model:PivotTo(CFrame.new(position))
-    end
+    model:PivotTo(CFrame.new(spawnPos))
+    -- Rename after pivot so the name includes the instanceId
+    model.Name = "BrainrotNPC_" .. instanceId
 
     local state = {
         defId         = defId,
         model         = model,
-        spawnPos      = position,
+        spawnPos      = spawnPos,
         beingCaptured = false,
         capturedBy    = nil,
         spawnedAt     = os.clock(),
     }
     ActiveBrainrots[instanceId] = state
 
-    -- Start AI
-    local thread = task.spawn(runAI, instanceId, def, position)
-    AiTasks[instanceId]  = thread
+    local thread = task.spawn(runAI, instanceId, def, spawnPos)
+    AiTasks[instanceId] = thread
 
-    -- Auto-despawn timer
     task.delay(DESPAWN_AFTER, function()
         if ActiveBrainrots[instanceId] then
             BrainrotSpawnService.despawnBrainrot(instanceId)
         end
     end)
 
-    -- Notify all clients
     Remotes.BrainrotSpawned:FireAllClients({
         instanceId = instanceId,
         defId      = defId,
-        position   = position,
+        position   = spawnPos,
         name       = def.name,
         rarity     = def.brainrotType,
     })
@@ -329,128 +387,44 @@ function BrainrotSpawnService.despawnBrainrot(instanceId: string)
     local state = ActiveBrainrots[instanceId]
     if not state then return end
 
-    -- Cancel AI task
     local thread = AiTasks[instanceId]
     if thread then
         task.cancel(thread)
         AiTasks[instanceId] = nil
     end
 
-    -- Destroy model
     if state.model and state.model.Parent then
         state.model:Destroy()
     end
 
     ActiveBrainrots[instanceId] = nil
-
     Remotes.BrainrotDespawned:FireAllClients({ instanceId = instanceId })
 end
 
-function BrainrotSpawnService.getActive(): { [string]: any }
+function BrainrotSpawnService.getActive()
     return ActiveBrainrots
 end
 
-function BrainrotSpawnService.getState(instanceId: string): any?
+function BrainrotSpawnService.getState(instanceId: string)
     return ActiveBrainrots[instanceId]
 end
 
--- Mark a brainrot as being captured (blocks AI fleeing during capture)
 function BrainrotSpawnService.lockForCapture(instanceId: string, userId: number): boolean
-    local state = ActiveBrainrots[instanceId]
-    if not state then return false end
-    if state.beingCaptured then return false end
-    state.beingCaptured = true
-    state.capturedBy    = userId
+    local s = ActiveBrainrots[instanceId]
+    if not s or s.beingCaptured then return false end
+    s.beingCaptured = true
+    s.capturedBy    = userId
     return true
 end
 
 function BrainrotSpawnService.unlockCapture(instanceId: string)
-    local state = ActiveBrainrots[instanceId]
-    if state then
-        state.beingCaptured = false
-        state.capturedBy    = nil
-    end
+    local s = ActiveBrainrots[instanceId]
+    if s then s.beingCaptured = false; s.capturedBy = nil end
 end
 
--- ── Spawn loop ────────────────────────────────────────────────────────
+-- ── RequestDamage handler ─────────────────────────────────────────────────
 
-local function countActiveByType(brainrotType: string): number
-    local count = 0
-    for _, state in pairs(ActiveBrainrots) do
-        local def = Brainrots.getById(state.defId)
-        if def and def.brainrotType == brainrotType then
-            count += 1
-        end
-    end
-    return count
-end
-
-local function totalActive(): number
-    local count = 0
-    for _ in pairs(ActiveBrainrots) do count += 1 end
-    return count
-end
-
-local function spawnLoop()
-    task.wait(5)
-
-    while true do
-        task.wait(Economy.SpawnIntervalSeconds)
-
-        if totalActive() >= MAX_TOTAL_NPCS then continue end
-
-        local spawnable = Brainrots.getAllSpawnable()
-
-        -- Spawn commons up to cap
-        local commonCount = countActiveByType("Common")
-        if commonCount < Economy.MaxCommonBrainrotsPerZone * 3 then
-            local commons = {}
-            for _, def in ipairs(spawnable) do
-                if def.brainrotType == "Common" then
-                    table.insert(commons, def)
-                end
-            end
-            if #commons > 0 then
-                BrainrotSpawnService.spawnBrainrot(commons[math.random(1, #commons)].id)
-            end
-        end
-
-        -- 30% chance to spawn a Rare
-        local rareCount = countActiveByType("Rare")
-        if rareCount < Economy.MaxRareBrainrotsPerServer and math.random() < 0.3 then
-            local rares = {}
-            for _, def in ipairs(spawnable) do
-                if def.brainrotType == "Rare" then
-                    table.insert(rares, def)
-                end
-            end
-            if #rares > 0 then
-                BrainrotSpawnService.spawnBrainrot(rares[math.random(1, #rares)].id)
-            end
-        end
-
-        -- 10% chance to spawn an Elite
-        if math.random() < 0.1 then
-            local elites = {}
-            for _, def in ipairs(spawnable) do
-                if def.brainrotType == "Elite" then
-                    table.insert(elites, def)
-                end
-            end
-            if #elites > 0 then
-                BrainrotSpawnService.spawnBrainrot(elites[math.random(1, #elites)].id)
-            end
-        end
-    end
-end
-
--- ── RequestDamage handler ─────────────────────────────────────────────
-
-local WEAPON_DAMAGE = {
-    Bate      = 34,
-    Boomerang = 25,
-    Pelota    = 20,
-}
+local WEAPON_DAMAGE    = { Bate = 34, Boomerang = 25, Pelota = 20 }
 local MAX_HIT_DISTANCE = 25
 
 local function onRequestDamage(player: Player, info: any)
@@ -461,9 +435,8 @@ local function onRequestDamage(player: Player, info: any)
     local state = ActiveBrainrots[instanceId]
     if not state then return end
 
-    -- Server-side distance check
-    local char = player.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local char   = player.Character
+    local hrp    = char and char:FindFirstChild("HumanoidRootPart")
     local npcHrp = state.model and state.model:FindFirstChild("HumanoidRootPart")
     if not hrp or not npcHrp then return end
     if (hrp.Position - npcHrp.Position).Magnitude > MAX_HIT_DISTANCE then return end
@@ -475,7 +448,6 @@ local function onRequestDamage(player: Player, info: any)
     humanoid.Health = math.max(0, humanoid.Health - damage)
 
     if humanoid.Health <= 0 then
-        -- NPC killed — give reward via CardService
         local ok, CardService = pcall(require, script.Parent.CardService)
         local def = Brainrots.getById(state.defId)
         if ok and CardService and def and def.rewardsTable then
@@ -487,7 +459,7 @@ local function onRequestDamage(player: Player, info: any)
             local coins = Economy.CaptureCoins[def.brainrotType] or 15
             PDS.addCoins(player, coins)
             Remotes.Notification:FireClient(player, {
-                type = "success",
+                type    = "success",
                 message = "⚽ +" .. coins .. " monedas — " .. def.name .. " eliminado!",
             })
         end
@@ -496,29 +468,75 @@ local function onRequestDamage(player: Player, info: any)
     end
 end
 
--- ── Init ──────────────────────────────────────────────────────────────
+-- ── Spawn loop ────────────────────────────────────────────────────────────
+
+local function spawnLoop()
+    task.wait(5)
+    while true do
+        task.wait(Economy.SpawnIntervalSeconds)
+        if totalActive() >= MAX_TOTAL_NPCS then continue end
+
+        local spawnable = Brainrots.getAllSpawnable()
+
+        -- Rellenar commons hasta el cap
+        local commonCap = Economy.MaxCommonBrainrotsPerZone * 3
+        if countByType("Common") < commonCap then
+            local commons = {}
+            for _, d in ipairs(spawnable) do
+                if d.brainrotType == "Common" then table.insert(commons, d) end
+            end
+            if #commons > 0 then
+                BrainrotSpawnService.spawnBrainrot(commons[math.random(1, #commons)].id)
+            end
+        end
+
+        -- 30% de chance de Rare
+        if countByType("Rare") < Economy.MaxRareBrainrotsPerServer and math.random() < 0.3 then
+            local rares = {}
+            for _, d in ipairs(spawnable) do
+                if d.brainrotType == "Rare" then table.insert(rares, d) end
+            end
+            if #rares > 0 then
+                BrainrotSpawnService.spawnBrainrot(rares[math.random(1, #rares)].id)
+            end
+        end
+
+        -- 10% de chance de Elite
+        if math.random() < 0.1 then
+            local elites = {}
+            for _, d in ipairs(spawnable) do
+                if d.brainrotType == "Elite" then table.insert(elites, d) end
+            end
+            if #elites > 0 then
+                BrainrotSpawnService.spawnBrainrot(elites[math.random(1, #elites)].id)
+            end
+        end
+    end
+end
+
+-- ── Init ──────────────────────────────────────────────────────────────────
 
 function BrainrotSpawnService.OnStart()
     collectSpawnPoints()
 
-    Remotes.RequestDamage:Connect(onRequestDamage)
-
     if #spawnPoints == 0 then
-        warn("[BrainrotSpawnService] No BrainrotSpawn parts found in Workspace.Map.BrainrotSpawns")
-        warn("  Run the map setup script in Studio first.")
+        warn("[BrainrotSpawnService] No spawn points found in Map.BrainrotSpawns")
         return
     end
 
-    -- Spawn a few commons immediately on start
+    Remotes.RequestDamage:Connect(onRequestDamage)
+
+    -- Spawn iniciales staggereados para que no aparezcan todos juntos
     local commons = {}
-    for _, def in ipairs(Brainrots.getAllSpawnable()) do
-        if def.brainrotType == "Common" then
-            table.insert(commons, def)
-        end
+    for _, d in ipairs(Brainrots.getAllSpawnable()) do
+        if d.brainrotType == "Common" then table.insert(commons, d) end
     end
-    for _ = 1, math.min(4, #commons) do
-        local def = commons[math.random(1, #commons)]
-        BrainrotSpawnService.spawnBrainrot(def.id)
+
+    for i = 1, math.min(5, #commons) do
+        task.delay((i - 1) * 1.5, function()
+            local def = commons[math.random(1, #commons)]
+            BrainrotSpawnService.spawnBrainrot(def.id)
+        end)
     end
 
     task.spawn(spawnLoop)
